@@ -1,0 +1,105 @@
+# DevSecOps pipeline for the Explainable Phishing Email Detector
+# Stages: Build & Lint -> SAST (Bandit) -> Dependency Check (Safety) -> Test (pytest+coverage) -> Deploy (smoke test)
+# Mirror this file to .github/workflows/pipeline.yml so GitHub Actions picks it up.
+name: DevSecOps Pipeline
+
+on:
+  push:
+    branches: ["**"]
+  pull_request:
+    branches: ["main"]
+
+jobs:
+  build-and-lint:
+    name: "Stage 1: Build & Lint"
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: pip install -r requirements.txt
+      - name: Hard-fail on syntax errors / undefined names
+        run: flake8 src --select=E9,F63,F7,F82 --show-source
+      - name: Style report (non-blocking)
+        run: flake8 src --exit-zero --statistics
+
+  sast:
+    name: "Stage 2: SAST (Bandit)"
+    needs: build-and-lint
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: pip install -r requirements.txt
+      - name: Run Bandit (medium severity and above)
+        run: bandit -r src -ll -f json -o bandit-report.json
+        continue-on-error: true   # informational artefact; reviewed findings are documented in docs/threat_model.md
+      - uses: actions/upload-artifact@v4
+        with:
+          name: bandit-report
+          path: bandit-report.json
+
+  dependency-check:
+    name: "Stage 3: Dependency Check (Safety)"
+    needs: sast
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: pip install -r requirements.txt
+      - name: Run Safety dependency scan
+        run: safety check -r requirements.txt --json > safety-report.json
+        continue-on-error: true
+      - name: Secrets scan (gitleaks)
+        uses: gitleaks/gitleaks-action@v2
+        continue-on-error: true
+      - uses: actions/upload-artifact@v4
+        with:
+          name: safety-report
+          path: safety-report.json
+
+  test:
+    name: "Stage 4: Test & Coverage"
+    needs: dependency-check
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: pip install -r requirements.txt
+      - name: Train model artefact (required for inference tests)
+        run: python train_model.py
+      - name: Run pytest with coverage gate (fail under 50%)
+        run: |
+          cd src
+          pytest ../tests -v --cov=. --cov-report=term --cov-fail-under=50
+      - uses: actions/upload-artifact@v4
+        with:
+          name: model-eval-report
+          path: instance/model_eval_report.json
+
+  deploy:
+    name: "Stage 5: Deploy (smoke test)"
+    needs: test
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: pip install -r requirements.txt
+      - run: python train_model.py
+      - name: Smoke test - app factory instantiates cleanly
+        env:
+          SECRET_KEY: ci-smoke-test-key-not-for-production
+          FLASK_ENV: production
+        run: |
+          cd src
+          python -c "from app import create_app; app = create_app(); print('App factory OK:', app.name)"

@@ -1,0 +1,18 @@
+{% extends "base.html" %}
+{% block title %}Set up 2FA{% endblock %}
+{% block content %}
+<div class="card center-form">
+  <h2>Set up two-factor authentication</h2>
+  <p class="mono">Scan this QR code with Google Authenticator / Authy, or enter the secret manually.</p>
+  <div style="background:white; padding:16px; border-radius:8px; display:inline-block;">
+    <img alt="TOTP QR code" src="data:image/svg+xml;base64,{{ qr_svg_b64 }}" width="200" height="200">
+  </div>
+  <p class="mono">Manual entry key: <b>{{ secret }}</b></p>
+  <form method="POST" action="{{ url_for('auth.confirm_2fa_setup') }}">
+    {{ form.hidden_tag() }}
+    <label>Enter the 6-digit code to confirm</label>
+    {{ form.token() }}
+    <button class="button" type="submit">Confirm & activate</button>
+  </form>
+</div>
+{% endblock %}

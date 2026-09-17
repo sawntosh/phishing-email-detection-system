@@ -1,0 +1,17 @@
+From: "Jordan Lee" <jordan@company.com>
+To: team@company.com
+Subject: Team meeting notes - Q3 planning
+Date: Mon, 01 Sep 2026 10:03:00 +0000
+Authentication-Results: mx.example.com; spf=pass smtp.mailfrom=company.com; dkim=pass header.d=company.com; dmarc=pass
+MIME-Version: 1.0
+Content-Type: text/plain; charset="utf-8"
+
+Hi team,
+
+Attaching the notes from today's Q3 planning meeting. Let me know if I
+missed anything, and see you all at the sync on Thursday.
+
+More details on the shared drive: https://company.com/portal/notes
+
+Thanks,
+Jordan

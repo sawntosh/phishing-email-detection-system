@@ -1,0 +1,16 @@
+{% extends "base.html" %}
+{% block title %}Login{% endblock %}
+{% block content %}
+<div class="card center-form">
+  <h2>Log in</h2>
+  <form method="POST" novalidate>
+    {{ form.hidden_tag() }}
+    <label>Username</label>
+    {{ form.username(id="username") }}
+    <label>Password</label>
+    {{ form.password() }}
+    <button class="button" type="submit">Continue</button>
+  </form>
+  <p class="mono" style="margin-top:16px;">No account? <a href="{{ url_for('auth.register') }}" style="color:var(--accent);">Register</a></p>
+</div>
+{% endblock %}

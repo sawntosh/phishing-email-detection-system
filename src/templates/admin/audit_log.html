@@ -1,0 +1,27 @@
+{% extends "base.html" %}
+{% block title %}Audit log{% endblock %}
+{% block content %}
+<h1>Tamper-evident audit log</h1>
+<div class="card">
+  {% if is_valid %}
+    <p><span class="badge badge-legitimate">Chain intact</span> — every hash matches its predecessor; no historical entry has been altered.</p>
+  {% else %}
+    <p><span class="badge badge-phishing">CHAIN BROKEN at entry #{{ broken_id }}</span> — historical tampering detected. Investigate immediately.</p>
+  {% endif %}
+</div>
+<div class="card">
+  <table>
+    <tr><th>ID</th><th>Time (UTC)</th><th>User</th><th>Event</th><th>IP</th><th>Detail</th></tr>
+    {% for e in entries %}
+    <tr>
+      <td>{{ e.id }}</td>
+      <td>{{ e.timestamp.strftime('%Y-%m-%d %H:%M:%S') }}</td>
+      <td>{{ e.username or '-' }}</td>
+      <td>{{ e.event_type }}</td>
+      <td>{{ e.ip_address or '-' }}</td>
+      <td class="mono">{{ e.detail }}</td>
+    </tr>
+    {% endfor %}
+  </table>
+</div>
+{% endblock %}

@@ -1,0 +1,93 @@
+{% extends "base.html" %}
+{% block title %}Result #{{ s.id }}{% endblock %}
+{% block content %}
+<h1>Submission #{{ s.id }}</h1>
+
+<div class="card">
+  <div style="display:flex; justify-content:space-between; align-items:center;">
+    <h2 style="margin:0;">{{ s.subject or '(no subject)' }}</h2>
+    <span class="badge badge-{{ s.verdict }}">{{ s.verdict|upper }}</span>
+  </div>
+  <p class="mono">From: {{ s.sender }} &nbsp;|&nbsp; File: {{ s.original_filename }} &nbsp;|&nbsp; SHA-256: {{ s.sha256_hash }}</p>
+
+  <label>Risk score: {{ s.risk_score }} / 100</label>
+  <div class="score-bar"><div style="width:{{ s.risk_score }}%; background: {{ 'var(--danger)' if s.risk_score >= 70 else ('var(--warn)' if s.risk_score >= 35 else 'var(--ok)') }};"></div></div>
+
+  <table>
+    <tr><th>SPF</th><th>DKIM</th><th>DMARC</th><th>ML phishing probability</th></tr>
+    <tr><td>{{ s.spf_result }}</td><td>{{ s.dkim_result }}</td><td>{{ s.dmarc_result }}</td><td>{{ s.ml_probability }}</td></tr>
+  </table>
+
+  <p style="margin-top:14px;">
+    {% if s.quarantined %}
+      <span class="badge badge-suspicious">Quarantined</span>
+      {% if current_user.role in ['analyst','admin'] %}
+      <form method="POST" action="{{ url_for('detector.release_quarantine', submission_id=s.id) }}" style="display:inline;">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+        <button class="button secondary" type="submit">Release from quarantine</button>
+      </form>
+      {% endif %}
+    {% else %}
+      <span class="badge badge-legitimate">Not quarantined</span>
+    {% endif %}
+  </p>
+</div>
+
+<div class="card">
+  <h3>Rule-based indicators</h3>
+  {% if s.rule_indicators() %}
+  <table>
+    <tr><th>Indicator</th></tr>
+    {% for ind in s.rule_indicators() %}<tr><td>{{ ind }}</td></tr>{% endfor %}
+  </table>
+  {% else %}<p class="mono">None triggered.</p>{% endif %}
+</div>
+
+<div class="card">
+  <h3>ML explainability — top contributing features</h3>
+  <p class="mono">contribution = coefficient × (standardised feature value); positive pushes toward "phishing".</p>
+  <table>
+    <tr><th>Feature</th><th>Value</th><th>Contribution</th></tr>
+    {% for e in s.ml_explanation() %}
+    <tr><td>{{ e.feature }}</td><td>{{ e.value }}</td><td style="color: {{ 'var(--danger)' if e.contribution > 0 else 'var(--ok)' }}">{{ e.contribution }}</td></tr>
+    {% endfor %}
+  </table>
+</div>
+
+<div class="card">
+  <h3>Attachments (metadata/hash only — never opened)</h3>
+  {% if s.attachment_summary() %}
+  <table>
+    <tr><th>Filename</th><th>Declared type</th><th>Size</th><th>SHA-256</th></tr>
+    {% for a in s.attachment_summary() %}
+    <tr><td>{{ a.filename }}</td><td>{{ a.declared_type }}</td><td>{{ a.size_bytes }} B</td><td class="mono">{{ a.sha256 }}</td></tr>
+    {% endfor %}
+  </table>
+  {% else %}<p class="mono">No attachments.</p>{% endif %}
+</div>
+
+<div class="card">
+  <h3>Export</h3>
+  <a class="button secondary" href="{{ url_for('detector.export_result', submission_id=s.id, fmt='pdf') }}">Export PDF</a>
+  <a class="button secondary" href="{{ url_for('detector.export_result', submission_id=s.id, fmt='csv') }}">Export CSV</a>
+  <a class="button secondary" href="{{ url_for('detector.export_result', submission_id=s.id, fmt='json') }}">Export JSON</a>
+</div>
+
+{% if current_user.role in ['analyst','admin'] %}
+<div class="card">
+  <h3>Analyst feedback</h3>
+  {% if s.analyst_feedback %}
+    <p>Recorded feedback: <b>{{ s.analyst_feedback }}</b></p>
+    {% if s.feedback_notes %}<p class="mono">{{ s.feedback_notes }}</p>{% endif %}
+  {% else %}
+  <form method="POST" action="{{ url_for('detector.submit_feedback', submission_id=s.id) }}">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+    <label>Notes (optional)</label>
+    <textarea name="notes" rows="2"></textarea>
+    <button class="button" type="submit" name="feedback" value="confirmed_phish">Confirm phishing</button>
+    <button class="button secondary" type="submit" name="feedback" value="false_positive">Mark false positive</button>
+  </form>
+  {% endif %}
+</div>
+{% endif %}
+{% endblock %}

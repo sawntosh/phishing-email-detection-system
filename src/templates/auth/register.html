@@ -1,0 +1,24 @@
+{% extends "base.html" %}
+{% block title %}Register{% endblock %}
+{% block content %}
+<div class="card center-form">
+  <h2>Create account</h2>
+  <form method="POST" novalidate>
+    {{ form.hidden_tag() }}
+    <label>Username</label>
+    {{ form.username() }}
+    <label>Email</label>
+    {{ form.email() }}
+    <label>Role</label>
+    {{ form.role() }}
+    <label>Password</label>
+    {{ form.password() }}
+    <label>Confirm password</label>
+    {{ form.confirm_password() }}
+    <button class="button" type="submit">Register</button>
+  </form>
+  {% for field in [form.username, form.email, form.password, form.confirm_password] %}
+    {% for err in field.errors %}<div class="flash flash-danger">{{ err }}</div>{% endfor %}
+  {% endfor %}
+</div>
+{% endblock %}

@@ -1,0 +1,20 @@
+From: "PayPal Security" <security@paypa1-secure.com>
+To: victim@example.com
+Subject: Urgent: Verify your account now
+Date: Mon, 01 Sep 2026 09:12:00 +0000
+Authentication-Results: mx.example.com; spf=fail smtp.mailfrom=paypa1-secure.com; dkim=fail header.d=paypa1-secure.com; dmarc=fail
+Reply-To: reply@totally-not-paypal.ru
+MIME-Version: 1.0
+Content-Type: text/plain; charset="utf-8"
+
+Dear Customer,
+
+We detected unusual activity on your account. Your account will be
+suspended within 24 hours unless you verify your identity immediately.
+
+Click here to confirm your password and login credentials:
+http://paypa1-secure.com/verify?id=88213
+
+This is your final notice. Act now!!!
+
+PayPal Security Team

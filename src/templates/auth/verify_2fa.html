@@ -1,0 +1,13 @@
+{% extends "base.html" %}
+{% block title %}Verify 2FA{% endblock %}
+{% block content %}
+<div class="card center-form">
+  <h2>Two-factor verification</h2>
+  <form method="POST" novalidate>
+    {{ form.hidden_tag() }}
+    <label>Authenticator code</label>
+    {{ form.token() }}
+    <button class="button" type="submit">Verify</button>
+  </form>
+</div>
+{% endblock %}

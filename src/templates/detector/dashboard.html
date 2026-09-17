@@ -1,0 +1,46 @@
+{% extends "base.html" %}
+{% block title %}Dashboard{% endblock %}
+{% block content %}
+<h1>Dashboard</h1>
+<div class="grid grid-4">
+  <div class="card stat"><div class="num">{{ total }}</div><div class="label">Total analysed</div></div>
+  <div class="card stat"><div class="num" style="color:var(--danger)">{{ phishing }}</div><div class="label">Phishing</div></div>
+  <div class="card stat"><div class="num" style="color:var(--warn)">{{ suspicious }}</div><div class="label">Suspicious</div></div>
+  <div class="card stat"><div class="num" style="color:var(--ok)">{{ false_positives }}</div><div class="label">Reported false positives</div></div>
+</div>
+
+<div class="card">
+  <h3>Most common indicators (last 200 scans)</h3>
+  <table>
+    <tr><th>Indicator</th><th>Occurrences</th></tr>
+    {% for ind, count in top_indicators %}
+    <tr><td>{{ ind }}</td><td>{{ count }}</td></tr>
+    {% else %}
+    <tr><td colspan="2">No submissions yet.</td></tr>
+    {% endfor %}
+  </table>
+</div>
+
+<div class="card">
+  <div style="display:flex; justify-content:space-between; align-items:center;">
+    <h3>Recent submissions</h3>
+    <a class="button" href="{{ url_for('detector.upload') }}">+ Analyse email</a>
+  </div>
+  <table>
+    <tr><th>ID</th><th>Subject</th><th>Sender</th><th>Verdict</th><th>Score</th><th>Quarantined</th><th></th></tr>
+    {% for s in submissions %}
+    <tr>
+      <td>{{ s.id }}</td>
+      <td>{{ s.subject or '(no subject)' }}</td>
+      <td>{{ s.sender }}</td>
+      <td><span class="badge badge-{{ s.verdict }}">{{ s.verdict }}</span></td>
+      <td>{{ s.risk_score }}</td>
+      <td>{{ 'Yes' if s.quarantined else 'No' }}</td>
+      <td><a href="{{ url_for('detector.view_result', submission_id=s.id) }}" style="color:var(--accent);">View</a></td>
+    </tr>
+    {% else %}
+    <tr><td colspan="7">No submissions yet — analyse an .eml file to get started.</td></tr>
+    {% endfor %}
+  </table>
+</div>
+{% endblock %}

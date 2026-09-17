@@ -1,0 +1,33 @@
+{% extends "base.html" %}
+{% block title %}Model performance{% endblock %}
+{% block content %}
+<h1>Model & tool performance</h1>
+{% if eval_report %}
+<div class="card">
+  <h3>Held-out evaluation (train_model.py)</h3>
+  <div class="grid grid-4">
+    <div class="stat"><div class="num">{{ eval_report.precision }}</div><div class="label">Precision</div></div>
+    <div class="stat"><div class="num">{{ eval_report.recall }}</div><div class="label">Recall</div></div>
+    <div class="stat"><div class="num">{{ eval_report.f1_score }}</div><div class="label">F1 score</div></div>
+    <div class="stat"><div class="num">{{ eval_report.false_positive_rate }}</div><div class="label">False positive rate</div></div>
+  </div>
+  <table>
+    <tr><th></th><th>Predicted legitimate</th><th>Predicted phishing</th></tr>
+    <tr><td>Actual legitimate</td><td>{{ eval_report.confusion_matrix.tn }} (TN)</td><td>{{ eval_report.confusion_matrix.fp }} (FP)</td></tr>
+    <tr><td>Actual phishing</td><td>{{ eval_report.confusion_matrix.fn }} (FN)</td><td>{{ eval_report.confusion_matrix.tp }} (TP)</td></tr>
+  </table>
+  <p class="mono">{{ eval_report.note }}</p>
+</div>
+{% else %}
+<div class="card"><p class="mono">No evaluation report found — run <code>python train_model.py</code> first.</p></div>
+{% endif %}
+
+<div class="card">
+  <h3>Analyst feedback loop</h3>
+  <div class="grid grid-4">
+    <div class="stat"><div class="num">{{ total_scored }}</div><div class="label">Total scored</div></div>
+    <div class="stat"><div class="num" style="color:var(--danger)">{{ confirmed_count }}</div><div class="label">Confirmed phishing</div></div>
+    <div class="stat"><div class="num" style="color:var(--warn)">{{ fp_count }}</div><div class="label">False positives reported</div></div>
+  </div>
+</div>
+{% endblock %}
