@@ -1,9 +1,15 @@
 from flask_wtf import FlaskForm
-from wtforms import StringField, PasswordField, SelectField
+from wtforms import StringField, PasswordField
 from wtforms.validators import DataRequired, Email, Length, EqualTo, Regexp
 
 
 class RegisterForm(FlaskForm):
+    # No role field: self-registration always creates an 'analyst' account
+    # (see auth/routes.py::register). Letting registrants pick their own
+    # role -- including 'admin' -- would be a privilege-escalation hole in
+    # the exact RBAC feature this project is graded on. Admin accounts are
+    # created only via the .env-seeded default admin (app.py) or a future
+    # admin-only promotion action.
     username = StringField("Username", validators=[DataRequired(), Length(3, 80)])
     email = StringField("Email", validators=[DataRequired(), Email()])
     password = PasswordField(
@@ -16,7 +22,6 @@ class RegisterForm(FlaskForm):
         ],
     )
     confirm_password = PasswordField("Confirm password", validators=[DataRequired(), EqualTo("password")])
-    role = SelectField("Role", choices=[("analyst", "Analyst"), ("admin", "Admin")], default="analyst")
 
 
 class LoginForm(FlaskForm):

@@ -43,11 +43,13 @@ cd src
 python app.py                      # http://127.0.0.1:5000
 ```
 
-First run: either set `DEFAULT_ADMIN_USERNAME/EMAIL/PASSWORD` in `.env`
-before first start to auto-create an admin, **or** just register the first
-account at `/auth/register` and select role `admin`. Either way you'll be
-sent through TOTP 2FA setup (scan the QR code with Google Authenticator/Authy)
-before you can log in.
+First run: set `DEFAULT_ADMIN_USERNAME/EMAIL/PASSWORD` in `.env` before
+first start to auto-create an admin account (see `_ensure_default_admin`
+in `app.py`). Self-registration at `/auth/register` always creates an
+`analyst` account by design — registrants cannot choose their own role,
+since that would be a privilege-escalation hole in the RBAC feature.
+Either way you'll be sent through TOTP 2FA setup (scan the QR code with
+Google Authenticator/Authy) before you can log in.
 
 Try it immediately with the two sample emails in `sample_emails/`
 (`phishing_paypal.eml` scores ~98/100 and is auto-quarantined;
@@ -132,7 +134,7 @@ on ingestion) and clearly logged to the audit trail.
 
 ## Security notes
 
-- Passwords: PBKDF2-SHA256 via Werkzeug, never plaintext.
+- Passwords: Argon2id via passlib, never plaintext.
 - 2FA: RFC 6238 TOTP via PyOTP, Google-Authenticator compatible.
 - CSRF: Flask-WTF `CSRFProtect` on every state-changing form.
 - Rate limiting: 20/hour on auth endpoints, 30/hour on uploads.

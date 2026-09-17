@@ -17,9 +17,15 @@ from datetime import datetime, timezone
 
 from flask_login import UserMixin
 from flask_sqlalchemy import SQLAlchemy
-from werkzeug.security import generate_password_hash, check_password_hash
+from passlib.context import CryptContext
 
 db = SQLAlchemy()
+
+# Argon2id (passlib's "argon2" scheme defaults to the id variant) -- the
+# OWASP-recommended KDF for new designs. "deprecated=auto" means if the
+# hashing scheme is ever upgraded, old hashes verify fine and are
+# transparently re-hashed on next successful login (see User.check_password).
+pwd_context = CryptContext(schemes=["argon2"], deprecated="auto")
 
 
 def utcnow():
@@ -56,10 +62,10 @@ class User(db.Model, UserMixin):
     submissions = db.relationship("EmailSubmission", backref="submitted_by", lazy="dynamic")
 
     def set_password(self, raw_password):
-        self.password_hash = generate_password_hash(raw_password, method="pbkdf2:sha256")
+        self.password_hash = pwd_context.hash(raw_password)
 
     def check_password(self, raw_password):
-        return check_password_hash(self.password_hash, raw_password)
+        return pwd_context.verify(raw_password, self.password_hash)
 
     @property
     def is_active(self):

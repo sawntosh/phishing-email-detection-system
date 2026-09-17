@@ -34,7 +34,7 @@ def register():
         user = User(
             username=form.username.data.strip(),
             email=form.email.data.strip().lower(),
-            role=form.role.data,
+            role="analyst",
             totp_secret=pyotp.random_base32(),
         )
         user.set_password(form.password.data)
@@ -129,6 +129,7 @@ def verify_2fa():
         if pyotp.TOTP(user.totp_secret).verify(form.token.data, valid_window=1):
             session.pop("pending_2fa_user_id", None)
             login_user(user)
+            session.permanent = True  # enforces PERMANENT_SESSION_LIFETIME (30-min idle timeout)
             user.last_login_at = utcnow()
             db.session.commit()
             AuditLog.append("login_success", user_id=user.id, username=user.username, ip_address=_client_ip())
@@ -143,4 +144,5 @@ def verify_2fa():
 def logout():
     AuditLog.append("logout", user_id=current_user.id, username=current_user.username, ip_address=_client_ip())
     logout_user()
+    session.clear()  # invalidate the whole session, not just the Flask-Login keys
     return redirect(url_for("auth.login"))
