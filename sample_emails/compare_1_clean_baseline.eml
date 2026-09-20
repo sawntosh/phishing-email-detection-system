@@ -1,0 +1,14 @@
+From: "Alex Chen" <alex.chen@company-portal.com>
+To: you@example.com
+Subject: Project notes from today
+Date: Mon, 1 Sep 2025 10:00:00 +0000
+Authentication-Results: mx.example.com; spf=pass smtp.mailfrom=company-portal.com; dkim=pass; dmarc=pass
+
+Hi there,
+
+Thanks for the call earlier. Here are the notes from today:
+https://company-portal.com/docs/notes-2025-09-01
+
+Let me know if you have questions.
+
+Alex
