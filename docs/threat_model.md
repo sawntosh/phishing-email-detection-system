@@ -18,20 +18,32 @@ attacker-controlled input).
 
 ## Trust boundaries & STRIDE
 
-| # | Boundary | STRIDE category | Threat | Mitigation | Where implemented |
-|---|---|---|---|---|---|
-| 1 | Browser ↔ App | Spoofing | Credential theft / session hijack | TOTP 2FA, HttpOnly+SameSite cookies, rate-limited login, account lockout after 5 failures | `auth/routes.py`, `config.py` |
-| 2 | Browser ↔ App | Tampering | CSRF-forged state-changing requests | Flask-WTF CSRF token on every POST form | `app.py` (`CSRFProtect`), all templates |
-| 3 | Browser ↔ App | Elevation of Privilege | Analyst accessing admin-only pages (audit log, model performance) | `@admin_required` / `@roles_required` decorators returning HTTP 403 | `security_utils.py` |
-| 4 | Browser ↔ App | Elevation of Privilege | User A viewing User B's analysis results (IDOR) | Ownership check in `_get_owned_submission()`; admin override only for `is_admin` | `detector/routes.py` |
-| 5 | **Email ↔ App** | **Tampering / Spoofing** | **Attacker submits a crafted, malicious, or malformed email to compromise the parser or exfiltrate data** | **Zero-Trust ingestion pipeline (G1–G7): deny-by-default MIME/size allow-list, safe stdlib parsing only, HTML sanitisation before any downstream code sees the body, no live requests ever made to URLs found in the email** | `analysis/zero_trust.py` |
-| 6 | Email ↔ App | Information Disclosure | Attachment content exfiltrated or executed via the analysis pipeline | Attachments are **never opened, rendered, executed, or persisted** — only filename, declared MIME type, and SHA-256 hash are retained | `analysis/zero_trust.py::gate_sanitise_and_contain` |
-| 7 | Email ↔ App | Denial of Service | Oversized or deeply-nested MIME payload exhausts memory/CPU | Hard 5 MB cap enforced before parsing (`MAX_CONTENT_LENGTH`), extension/MIME allow-list rejects non-email content immediately | `config.py`, `analysis/zero_trust.py` |
-| 8 | App ↔ DB | Tampering | SQL injection via crafted email fields (subject/sender reflected into queries) | SQLAlchemy ORM parameterised queries throughout; no raw SQL string interpolation anywhere in the codebase | `models.py` |
-| 9 | App ↔ DB | Repudiation | Analyst denies having released a quarantined phishing email, or denies a scoring decision | Every ingest/score/quarantine/release/feedback action is written to the **hash-chained** `AuditLog`; `verify_chain()` detects any retroactive edit | `models.py::AuditLog` |
-| 10 | App ↔ DB | Information Disclosure | Secrets (SECRET_KEY, DB credentials) checked into source control | All secrets loaded from `.env` (git-ignored); `.env.example` documents required keys with empty defaults | `.env.example`, `.gitignore`, `config.py` |
-| 11 | Model | Tampering / Evasion | Attacker studies the linear model to craft a feature-vector that evades detection (adversarial evasion) | Documented residual risk (see below) — mitigated by combining ML with independent rule-based indicators (hybrid scoring), so evading one signal alone does not zero the combined score | `analysis/risk_engine.py` |
-| 12 | Model | Repudiation of model integrity | Swapped/poisoned `model.json` loaded silently | Model file is plain JSON (not pickle — avoids arbitrary deserialisation/RCE) and is schema-checked against `FEATURE_NAMES` on load; mismatch raises rather than silently loading | `analysis/ml_classifier.py::load` |
+Risk rating = **Likelihood × Impact** (each Low/Medium/High), giving an
+overall priority used to order remediation effort. Ratings reflect
+residual risk *after* the listed mitigation is applied, except where
+noted as a pre-mitigation / inherent rating.
+
+| # | Boundary | STRIDE category | Threat | Likelihood | Impact | Risk rating (residual) | Mitigation | Where implemented |
+|---|---|---|---|---|---|---|---|---|
+| 1 | Browser ↔ App | Spoofing | Credential theft / session hijack | Medium | High | **Medium** | TOTP 2FA, HttpOnly+SameSite cookies, rate-limited login, account lockout after 5 failures | `auth/routes.py`, `config.py` |
+| 2 | Browser ↔ App | Tampering | CSRF-forged state-changing requests | Low | High | **Low** | Flask-WTF CSRF token on every POST form | `app.py` (`CSRFProtect`), all templates |
+| 3 | Browser ↔ App | Elevation of Privilege | Analyst accessing admin-only pages (audit log, model performance, user management) | Low | High | **Low** | `@admin_required` / `@roles_required` decorators returning HTTP 403 | `security_utils.py` |
+| 4 | Browser ↔ App | Elevation of Privilege | User A viewing User B's analysis results (IDOR) | Medium | Medium | **Medium** | Ownership check in `_get_owned_submission()`; admin override only for `is_admin` | `detector/routes.py` |
+| 5 | Browser ↔ App | Elevation of Privilege | An admin account is demoted/removed leaving zero admins able to manage roles or view the audit log | Low | High | **Low** | `change_user_role` refuses to demote the last remaining `admin` account, regardless of who requests it | `admin/routes.py::change_user_role` |
+| 6 | **Email ↔ App** | **Tampering / Spoofing** | **Attacker submits a crafted, malicious, or malformed email to compromise the parser or exfiltrate data** | High (attacker-controlled input by definition) | High | **Medium** | **Zero-Trust ingestion pipeline (G1–G7): deny-by-default MIME/size allow-list, safe stdlib parsing only, HTML sanitisation before any downstream code sees the body, no live requests ever made to URLs found in the email** | `analysis/zero_trust.py` |
+| 7 | Email ↔ App | Information Disclosure | Attachment content exfiltrated or executed via the analysis pipeline | Medium | High | **Medium** | Attachments are **never opened, rendered, executed, or persisted** — only filename, declared MIME type, and SHA-256 hash are retained | `analysis/zero_trust.py::gate_sanitise_and_contain` |
+| 8 | Email ↔ App | Denial of Service | Oversized or deeply-nested MIME payload exhausts memory/CPU | Medium | Medium | **Medium** | Hard 5 MB cap enforced before parsing (`MAX_CONTENT_LENGTH`), extension/MIME allow-list rejects non-email content immediately | `config.py`, `analysis/zero_trust.py` |
+| 9 | App ↔ DB | Tampering | SQL injection via crafted email fields (subject/sender reflected into queries) | Low | High | **Low** | SQLAlchemy ORM parameterised queries throughout; no raw SQL string interpolation anywhere in the codebase | `models.py` |
+| 10 | App ↔ DB | Repudiation | Analyst denies having released a quarantined phishing email, or denies a scoring decision | Low | Medium | **Low** | Every ingest/score/quarantine/release/feedback action is written to the **hash-chained** `AuditLog`; `verify_chain()` detects any retroactive edit | `models.py::AuditLog` |
+| 11 | App ↔ DB | Information Disclosure | Secrets (SECRET_KEY, DB credentials) checked into source control | Low | High | **Low** | All secrets loaded from `.env` (git-ignored); `.env.example` documents required keys with empty defaults | `.env.example`, `.gitignore`, `config.py` |
+| 12 | Model | Tampering / Evasion | Attacker studies the linear model to craft a feature-vector that evades detection (adversarial evasion) | High | Medium | **Medium-High** | Documented residual risk (see below) — mitigated by combining ML with independent rule-based indicators (hybrid scoring), so evading one signal alone does not zero the combined score | `analysis/risk_engine.py` |
+| 13 | Model | Repudiation of model integrity | Swapped/poisoned `model.json` loaded silently | Low | High | **Low** | Model file is plain JSON (not pickle — avoids arbitrary deserialisation/RCE) and is schema-checked against `FEATURE_NAMES` on load; mismatch raises rather than silently loading | `analysis/ml_classifier.py::load` |
+
+**Priority order for remediation effort (highest residual risk first):**
+Row 12 (adversarial ML evasion) > Rows 1, 6, 7, 8 (Medium) > all remaining
+Low-rated rows. This ordering is why the hybrid rules+ML design and the
+Zero-Trust pipeline received the most implementation and testing effort
+in this project — they mitigate the two highest-rated residual risks.
 
 ## Advanced feature evaluation: Zero-Trust email ingestion
 

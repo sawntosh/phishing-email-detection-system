@@ -33,7 +33,17 @@ def _ensure_model_trained():
 
 
 @pytest.fixture
-def app():
+def app(monkeypatch):
+    # Tests must not depend on the developer's local .env: if
+    # DEFAULT_ADMIN_PASSWORD happens to be set there, create_app() would
+    # silently seed an extra admin account into every test's database,
+    # breaking any test that reasons about "the only admin" (e.g. the
+    # last-admin-cannot-be-demoted safeguard). Set (not delete) the var:
+    # create_app() calls load_dotenv() internally, which only fills in
+    # variables that are *absent* from os.environ -- deleting it would
+    # just let .env repopulate it right back.
+    monkeypatch.setenv("DEFAULT_ADMIN_PASSWORD", "")
+
     app = create_app(TestConfig)
     with app.app_context():
         db.create_all()
