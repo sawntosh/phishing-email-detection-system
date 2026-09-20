@@ -1,0 +1,20 @@
+From: "PayPal Support" <security@totally-not-paypal.ru>
+To: victim@example.com
+Subject: Urgent: Verify your account immediately
+Date: Mon, 1 Sep 2025 10:00:00 +0000
+Authentication-Results: mx.example.com; spf=fail smtp.mailfrom=totally-not-paypal.ru; dkim=fail; dmarc=fail
+
+Dear valued customer,
+
+We have detected unusual activity on your account. Your account will be
+suspended unless you verify your identity immediately.
+
+Click here to confirm your identity and verify your password:
+https://trusted-mailer.com/click?redirect=https://evil-xyz.top/login
+
+You can also visit https://totally-not-paypal.ru/verify directly.
+
+Act now within 24 hours or your account will be closed.
+
+Thank you,
+PayPal Support Team
