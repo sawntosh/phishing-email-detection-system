@@ -1,0 +1,39 @@
+{% extends "base.html" %}
+{% block title %}Users{% endblock %}
+{% block content %}
+<h1>User management</h1>
+<div class="card">
+  <table>
+    <tr>
+      <th>ID</th><th>Username</th><th>Email</th><th>Role</th><th>2FA</th>
+      <th>Locked</th><th>Last login (UTC)</th><th>Action</th>
+    </tr>
+    {% for u in users %}
+    <tr>
+      <td>{{ u.id }}</td>
+      <td>{{ u.username }}{% if u.id == current_user.id %} <span class="mono">(you)</span>{% endif %}</td>
+      <td>{{ u.email }}</td>
+      <td>{{ u.role }}</td>
+      <td>{{ 'Yes' if u.totp_enabled else 'No' }}</td>
+      <td>{{ 'Yes' if u.locked_until and u.locked_until > now else 'No' }}</td>
+      <td>{{ u.last_login_at.strftime('%Y-%m-%d %H:%M:%S') if u.last_login_at else '-' }}</td>
+      <td>
+        {% if u.role == 'admin' %}
+          <form method="POST" action="{{ url_for('admin.change_user_role', user_id=u.id) }}" style="display:inline;">
+            <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+            <input type="hidden" name="role" value="analyst">
+            <button class="button secondary" type="submit">Demote to analyst</button>
+          </form>
+        {% else %}
+          <form method="POST" action="{{ url_for('admin.change_user_role', user_id=u.id) }}" style="display:inline;">
+            <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+            <input type="hidden" name="role" value="admin">
+            <button class="button" type="submit">Promote to admin</button>
+          </form>
+        {% endif %}
+      </td>
+    </tr>
+    {% endfor %}
+  </table>
+</div>
+{% endblock %}

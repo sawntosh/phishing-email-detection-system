@@ -63,3 +63,36 @@ def test_admin_can_access_admin_audit_log(client, admin_user):
     login(client, admin_user)
     resp = client.get("/admin/audit-log")
     assert resp.status_code == 200
+
+
+def test_analyst_cannot_access_user_management(client, analyst_user):
+    login(client, analyst_user)
+    resp = client.get("/admin/users")
+    assert resp.status_code == 403
+
+
+def test_admin_can_promote_analyst_to_admin(client, admin_user, analyst_user):
+    login(client, admin_user)
+    resp = client.post(f"/admin/users/{analyst_user.id}/role", data={"role": "admin"}, follow_redirects=True)
+    assert resp.status_code == 200
+    promoted = User.query.get(analyst_user.id)
+    assert promoted.role == "admin"
+    entries = [e.event_type for e in AuditLog.query.all()]
+    assert "role_changed" in entries
+
+
+def test_cannot_demote_the_last_remaining_admin(client, admin_user):
+    login(client, admin_user)
+    resp = client.post(f"/admin/users/{admin_user.id}/role", data={"role": "analyst"}, follow_redirects=True)
+    assert resp.status_code == 200
+    still_admin = User.query.get(admin_user.id)
+    assert still_admin.role == "admin"
+
+
+def test_can_demote_admin_when_another_admin_remains(client, admin_user, analyst_user):
+    login(client, admin_user)
+    client.post(f"/admin/users/{analyst_user.id}/role", data={"role": "admin"})  # now two admins
+    resp = client.post(f"/admin/users/{analyst_user.id}/role", data={"role": "analyst"}, follow_redirects=True)
+    assert resp.status_code == 200
+    demoted = User.query.get(analyst_user.id)
+    assert demoted.role == "analyst"
