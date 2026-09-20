@@ -12,7 +12,7 @@ is itself a security decision worth citing in the report.
 """
 import re
 import ipaddress
-from urllib.parse import urlparse
+from urllib.parse import urlparse, parse_qs, unquote
 
 import tldextract
 
@@ -34,6 +34,28 @@ PROTECTED_BRANDS = [
 
 SUSPICIOUS_TLDS = {"zip", "mov", "xyz", "top", "gq", "tk", "ml", "cf", "click", "link"}
 URL_SHORTENERS = {"bit.ly", "tinyurl.com", "t.co", "goo.gl", "ow.ly", "is.gd", "buff.ly"}
+
+# Query-parameter names commonly abused for open-redirect phishing (bounce
+# through a trusted domain to an attacker-controlled destination).
+REDIRECT_PARAM_NAMES = {
+    "url", "redirect", "redirecturl", "redirect_uri", "redirect_url",
+    "next", "continue", "return", "returnurl", "return_url", "target",
+    "dest", "destination", "go", "u", "r",
+}
+
+# Small illustrative offline reputation lists checked locally -- no live
+# network request is made (see module docstring). Swap `check_reputation`
+# for a real threat-intel API (VirusTotal/PhishTank/Google Safe Browsing)
+# behind an explicit, analyst-triggered, audit-logged action; never call
+# one automatically during ingestion of attacker-controlled input.
+KNOWN_MALICIOUS_DOMAINS = {
+    "totally-not-paypal.ru", "paypa1-secure.com", "secure-appleid-verify.com",
+    "account-verify-update.com", "signin-update-security.com",
+}
+KNOWN_SAFE_DOMAINS = {
+    "paypal.com", "microsoft.com", "apple.com", "google.com", "amazon.com",
+    "github.com", "wikipedia.org",
+}
 
 # Common leetspeak/homoglyph substitutions used in typosquatted domains
 # (e.g. "paypa1" for "paypal", "micr0soft" for "microsoft").
@@ -72,6 +94,48 @@ def _is_punycode(host: str) -> bool:
     return any(label.startswith("xn--") for label in host.split("."))
 
 
+def _check_redirect_indicators(url: str, parsed) -> list:
+    """Static/passive open-redirect and nested-URL detection. Never
+    follows the URL -- only inspects its own text, so it stays safe to
+    run on fully attacker-controlled input."""
+    findings = []
+
+    params = parse_qs(parsed.query)
+    for name, values in params.items():
+        if name.lower() not in REDIRECT_PARAM_NAMES:
+            continue
+        for value in values:
+            decoded = unquote(value)
+            if decoded.startswith(("http://", "https://", "//")):
+                findings.append("open_redirect_parameter")
+                break
+        if "open_redirect_parameter" in findings:
+            break
+
+    if url.lower().count("http://") + url.lower().count("https://") > 1:
+        findings.append("nested_url_in_url")
+
+    lowered_query = parsed.query.lower()
+    if "%2f%2f" in lowered_query or "%253a%252f%252f" in lowered_query:
+        findings.append("double_encoded_redirect")
+
+    return findings
+
+
+def check_reputation(registered_domain: str, host: str) -> dict:
+    """Offline/static reputation lookup against a small local
+    allow/deny list -- no live network request is made (see module
+    docstring). This is the pluggable hook described in the assessment
+    brief's "reputation/threat-intelligence lookup" requirement; swap the
+    body for a real API call gated behind an explicit analyst action."""
+    candidates = {registered_domain, host} - {""}
+    if candidates & KNOWN_MALICIOUS_DOMAINS:
+        return {"verdict": "known_malicious", "source": "local_denylist", "risk_points": 35}
+    if candidates & KNOWN_SAFE_DOMAINS:
+        return {"verdict": "known_safe", "source": "local_allowlist", "risk_points": 0}
+    return {"verdict": "unknown", "source": "local_lists", "risk_points": 0}
+
+
 def analyse_url(url: str) -> dict:
     parsed = urlparse(url)
     host = (parsed.hostname or "").lower()
@@ -96,6 +160,12 @@ def analyse_url(url: str) -> dict:
     if len(url) > 120:
         findings.append("excessively_long_url")
 
+    findings.extend(_check_redirect_indicators(url, parsed))
+
+    reputation = check_reputation(registered_domain, host)
+    if reputation["verdict"] == "known_malicious":
+        findings.append("known_malicious_domain")
+
     domain_label = ext.domain.lower() if ext.domain else ""
     normalised_label = _normalise_domain_label(domain_label)
     for brand in PROTECTED_BRANDS:
@@ -111,13 +181,17 @@ def analyse_url(url: str) -> dict:
             lookalike_of = brand
             break
 
+    non_reputation_findings = [f for f in findings if f != "known_malicious_domain"]
+    risk_points = (len(non_reputation_findings) * 6 if non_reputation_findings else 0) + reputation["risk_points"]
+
     return {
         "url": url,
         "host": host,
         "registered_domain": registered_domain,
         "findings": findings,
         "lookalike_of": lookalike_of,
-        "risk_points": len(findings) * 6 if findings else 0,
+        "reputation": reputation,
+        "risk_points": risk_points,
     }
 
 

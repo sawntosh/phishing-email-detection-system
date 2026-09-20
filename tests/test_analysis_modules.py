@@ -1,4 +1,4 @@
-from analysis.url_analysis import analyse_urls, analyse_url
+from analysis.url_analysis import analyse_urls, analyse_url, check_reputation
 from analysis.header_analysis import analyse_headers
 from analysis.content_analysis import analyse_content
 
@@ -18,6 +18,40 @@ def test_ip_literal_url_flagged():
 def test_legitimate_url_has_low_risk():
     r = analyse_url("https://company.com/portal/notes")
     assert r["risk_points"] == 0
+
+
+def test_open_redirect_parameter_flagged():
+    r = analyse_url("https://trusted-mailer.com/click?redirect=https://evil-xyz.top/login")
+    assert "open_redirect_parameter" in r["findings"]
+
+
+def test_open_redirect_ignores_benign_query_values():
+    r = analyse_url("https://company.com/search?redirect=thanks-page")
+    assert "open_redirect_parameter" not in r["findings"]
+
+
+def test_nested_url_in_url_flagged():
+    r = analyse_url("https://trusted-mailer.com/go?next=http://evil-xyz.top/login")
+    assert "nested_url_in_url" in r["findings"]
+
+
+def test_known_malicious_domain_flagged_via_reputation():
+    r = analyse_url("https://totally-not-paypal.ru/verify")
+    assert "known_malicious_domain" in r["findings"]
+    assert r["reputation"]["verdict"] == "known_malicious"
+    assert r["risk_points"] > 0
+
+
+def test_known_safe_domain_has_no_reputation_penalty():
+    result = check_reputation("paypal.com", "paypal.com")
+    assert result["verdict"] == "known_safe"
+    assert result["risk_points"] == 0
+
+
+def test_unknown_domain_reputation_is_neutral():
+    result = check_reputation("some-random-company.com", "some-random-company.com")
+    assert result["verdict"] == "unknown"
+    assert result["risk_points"] == 0
 
 
 def test_analyse_urls_counts_unique_domains():
