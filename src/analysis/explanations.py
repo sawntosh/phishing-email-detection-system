@@ -61,3 +61,110 @@ def defang(value):
     """Make a URL/domain inert for display so nobody clicks it by accident."""
     value = (value or "").replace("http", "hxxp").replace("HTTP", "HXXP")
     return value.replace(".", "[.]")
+
+
+# ---------------------------------------------------------------------------
+# Presentation metadata: a short title, a severity and a category per indicator
+# code. Used by the result page (evidence cards) and analytics; never affects scoring.
+# ---------------------------------------------------------------------------
+_TITLES = {
+    "ip_literal_host": "Link points to a raw IP address",
+    "punycode_domain": "Internationalised (punycode) domain",
+    "suspicious_tld": "Link uses a high-abuse domain extension",
+    "url_shortener": "Shortened link hides its destination",
+    "no_tls": "Link is not encrypted (HTTP)",
+    "excessive_hyphens": "Domain has unusually many hyphens",
+    "excessively_long_url": "Unusually long URL",
+    "userinfo_in_url": "Deceptive user@host link",
+    "nonstandard_port": "Link uses a non-standard port",
+    "open_redirect_parameter": "Link redirects to another site",
+    "nested_url_in_url": "URL embedded inside a URL",
+    "double_encoded_redirect": "Double-encoded redirect target",
+    "redirect_to_suspicious_target": "Redirect leads to a suspicious site",
+    "known_malicious_domain": "Domain is on the known-phishing list",
+    "blocklisted_domain": "Domain is on the threat blocklist",
+    "display_name_brand_mismatch": "Sender name impersonates a brand or role",
+    "reply_to_domain_mismatch": "Sender / Reply-To mismatch",
+    "numeric_heavy_sender_domain": "Sender domain contains many digits",
+    "fake_reply_thread": "Fake reply/forward thread",
+    "generic_greeting": "Generic greeting",
+    "excessive_exclamations": "Excessive exclamation marks",
+    "excessive_caps": "Excessive ALL-CAPS wording",
+    "embedded_form": "Embedded data-entry form",
+}
+_SEVERITY = {
+    "ip_literal_host": "high", "punycode_domain": "medium", "suspicious_tld": "medium", "url_shortener": "medium",
+    "no_tls": "low", "excessive_hyphens": "low", "excessively_long_url": "low", "userinfo_in_url": "high",
+    "nonstandard_port": "medium", "open_redirect_parameter": "high", "nested_url_in_url": "medium",
+    "double_encoded_redirect": "medium", "redirect_to_suspicious_target": "high", "known_malicious_domain": "critical",
+    "blocklisted_domain": "critical", "display_name_brand_mismatch": "high", "reply_to_domain_mismatch": "high",
+    "numeric_heavy_sender_domain": "low", "fake_reply_thread": "low", "generic_greeting": "low",
+    "excessive_exclamations": "low", "excessive_caps": "low", "embedded_form": "high",
+}
+_SENDER_CODES = {"display_name_brand_mismatch", "reply_to_domain_mismatch", "numeric_heavy_sender_domain"}
+_AUTH_RE_FULL = re.compile(r"^(spf|dkim|dmarc)_(fail|softfail|not_evaluated)$")
+_COUNT_RE = re.compile(r"^(urgency_language|credential_request_language)_x(\d+)$")
+
+
+_BRANDS = {
+    "paypal": "PayPal", "microsoft": "Microsoft", "apple": "Apple", "google": "Google", "amazon": "Amazon",
+    "netflix": "Netflix", "bankofamerica": "Bank of America", "wellsfargo": "Wells Fargo",
+    "americanexpress": "American Express", "dhl": "DHL", "auspost": "Australia Post", "commbank": "CommBank",
+    "anz": "ANZ", "westpac": "Westpac", "nab": "NAB",
+}
+
+
+def brand_display(key):
+    return _BRANDS.get((key or "").lower(), (key or "").title())
+
+
+def strip_layer(indicator):
+    return _LAYER_RE.sub("", indicator or "")
+
+
+def indicator_title(indicator):
+    code = strip_layer(indicator)
+    if code in _TITLES:
+        return _TITLES[code]
+    auth = _AUTH_RE_FULL.match(code)
+    if auth:
+        mech, result = auth.group(1).upper(), auth.group(2)
+        return f"{mech} not evaluated" if result == "not_evaluated" else f"{mech} authentication {result.replace('soft', 'soft-')}ed"
+    if code.startswith("lookalike_of_"):
+        return f"Look-alike of {brand_display(code[len('lookalike_of_'):])}"
+    if code.startswith("brand_substring_"):
+        return f"Possible {brand_display(code[len('brand_substring_'):])} impersonation"
+    counted = _COUNT_RE.match(code)
+    if counted:
+        return "Urgency or threat language" if counted.group(1) == "urgency_language" else "Asks for credentials or sensitive data"
+    return code.replace("_", " ").capitalize()
+
+
+def indicator_severity(indicator):
+    code = strip_layer(indicator)
+    if code in _SEVERITY:
+        return _SEVERITY[code]
+    auth = _AUTH_RE_FULL.match(code)
+    if auth:
+        return {"fail": "high", "softfail": "medium", "not_evaluated": "low"}[auth.group(2)]
+    if code.startswith(("lookalike_of_", "brand_substring_")):
+        return "high"
+    counted = _COUNT_RE.match(code)
+    if counted:
+        return "high" if (counted.group(1) == "credential_request_language" or int(counted.group(2)) >= 3) else "medium"
+    return "low"
+
+
+def indicator_category(indicator):
+    """url | sender | authentication | header | content"""
+    raw = indicator or ""
+    code = strip_layer(raw)
+    if raw.startswith("URL:"):
+        return "url"
+    if raw.startswith("Content:"):
+        return "content"
+    if code in _SENDER_CODES:
+        return "sender"
+    if _AUTH_RE_FULL.match(code):
+        return "authentication"
+    return "header"

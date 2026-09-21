@@ -1,35 +1,24 @@
 {% extends "base.html" %}
-{% block title %}Review queue{% endblock %}
+{% from "_macros.html" import icon, empty_state, submission_table with context %}
+{% block title %}Review Queue{% endblock %}
+{% block crumbs %}<nav class="crumbs" aria-label="Breadcrumb"><a href="{{ url_for('detector.dashboard') }}">Dashboard</a>{{ icon('i-chevron-right') }}<span aria-current="page">Review Queue</span></nav>{% endblock %}
 {% block content %}
-<h1>Analyst review queue</h1>
-<p class="mono">Flagged emails wait here until an analyst confirms them as phishing or marks them as false positives. Marked false positives are released from quarantine and exported as labelled feedback for retraining.</p>
+<div class="page-header">
+  <div><h1>Analyst review queue</h1>
+    <p>Flagged emails wait here until an analyst confirms them as phishing or marks them as false positives. False positives are released from quarantine and exported as labelled feedback for retraining.</p></div>
+  <div class="page-actions"><a class="btn btn--secondary" href="{{ url_for('detector.export_review_feedback') }}">{{ icon('i-download') }}Export feedback CSV</a></div>
+</div>
 
 <div class="card">
-  <div style="display:flex; justify-content:space-between; align-items:center;">
-    <div>
-      <a class="button {{ '' if view == 'pending' else 'secondary' }}" href="{{ url_for('detector.review_queue', view='pending') }}" style="{{ '' if view == 'pending' else 'background:#2a3348;' }}">Pending ({{ counts.pending }})</a>
-      <a class="button" href="{{ url_for('detector.review_queue', view='false_positive') }}" style="{{ '' if view == 'false_positive' else 'background:#2a3348;' }}">False positives ({{ counts.false_positive }})</a>
-      <a class="button" href="{{ url_for('detector.review_queue', view='confirmed_phish') }}" style="{{ '' if view == 'confirmed_phish' else 'background:#2a3348;' }}">Confirmed phishing ({{ counts.confirmed_phish }})</a>
-    </div>
-    <a class="button secondary" href="{{ url_for('detector.export_review_feedback') }}">Export feedback CSV</a>
-  </div>
-
-  <table>
-    <tr><th>ID</th><th>Subject</th><th>Sender</th><th>Verdict</th><th>Score</th><th>Feedback</th><th>Notes</th><th></th></tr>
-    {% for s in items %}
-    <tr>
-      <td>{{ s.id }}</td>
-      <td>{{ s.subject or '(no subject)' }}</td>
-      <td>{{ s.sender }}</td>
-      <td><span class="badge badge-{{ s.verdict }}">{{ s.verdict }}</span></td>
-      <td>{{ s.risk_score }}</td>
-      <td>{{ s.analyst_feedback or '—' }}</td>
-      <td class="mono">{{ s.feedback_notes or '' }}</td>
-      <td><a href="{{ url_for('detector.view_result', submission_id=s.id) }}" style="color:var(--accent);">Review</a></td>
-    </tr>
-    {% else %}
-    <tr><td colspan="8">Nothing here.</td></tr>
+  <div class="tabs__list" role="navigation" aria-label="Review views" style="padding-top:6px">
+    {% for key, label, ico, count in [('pending', 'Pending', 'i-clock', counts.pending), ('false_positive', 'False positives', 'i-check-circle', counts.false_positive), ('confirmed_phish', 'Confirmed phishing', 'i-alert-octagon', counts.confirmed_phish)] %}
+    <a class="tabs__tab" href="{{ url_for('detector.review_queue', view=key) }}" {% if view == key %}aria-current="page" aria-selected="true"{% else %}aria-selected="false"{% endif %} style="text-decoration:none">{{ icon(ico) }}{{ label }} <span class="tabs__count">{{ count }}</span></a>
     {% endfor %}
-  </table>
+  </div>
+  {% if items %}
+  <div class="card__body--flush">{{ submission_table(items, show_feedback=(view != 'pending')) }}</div>
+  {% else %}
+  {{ empty_state('i-shield-check', 'Nothing here', 'You are all caught up. Flagged emails that need a decision will appear in the Pending view.' if view == 'pending' else 'No emails have been recorded in this view yet.') }}
+  {% endif %}
 </div>
 {% endblock %}

@@ -1,0 +1,58 @@
+{% from "_macros.html" import icon with context %}<!DOCTYPE html>
+<html lang="en" data-theme="dark">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="color-scheme" content="dark light">
+  <title>{% block title %}Sign in{% endblock %} · {{ APP_NAME }}</title>
+  <script src="{{ url_for('static', filename='js/theme-init.js') }}"></script>
+  <link rel="stylesheet" href="{{ url_for('static', filename='css/app.css') }}">
+  <script src="{{ url_for('static', filename='js/app.js') }}" defer></script>
+</head>
+<body>
+  <a class="skip-link" href="#main">Skip to main content</a>
+  {% include "_icons.html" %}
+  <div class="auth">
+    <section class="auth__brand" aria-label="About {{ APP_NAME }}">
+      <a class="brand" href="{{ url_for('auth.login') }}" aria-label="{{ APP_NAME }}">
+        <span class="brand__mark">{{ icon('i-shield-check') }}</span>
+        <span><span class="brand__name">{{ APP_NAME }}</span><span class="brand__tag">{{ APP_TAGLINE }}</span></span>
+      </a>
+      <div class="auth__pitch">
+        <h2>Know why an email is dangerous, not just that it is.</h2>
+        <p>Every message is inspected by rule-based checks and a machine-learning model, then explained with the exact evidence behind the verdict.</p>
+        <ul class="auth__points">
+          <li>{{ icon('i-lock') }}Two-factor authentication and role-based access</li>
+          <li>{{ icon('i-link') }}Link, domain, header and sender analysis</li>
+          <li>{{ icon('i-fingerprint') }}Tamper-evident audit trail for every action</li>
+        </ul>
+      </div>
+      <div class="auth__foot">{{ APP_NAME }} v{{ APP_VERSION }} · Attachments are never opened or executed</div>
+    </section>
+
+    <main id="main" class="auth__panel">
+      <div class="auth__card">
+        <a class="brand auth__mobile-brand" href="{{ url_for('auth.login') }}" aria-label="{{ APP_NAME }}">
+          <span class="brand__mark">{{ icon('i-shield-check') }}</span>
+          <span><span class="brand__name">{{ APP_NAME }}</span><span class="brand__tag">{{ APP_TAGLINE }}</span></span>
+        </a>
+        {% block content %}{% endblock %}
+        <p class="text-center mt-3 mb-0">
+          <button class="btn btn--ghost btn--sm" type="button" data-theme-toggle aria-pressed="true" aria-label="Switch to light theme">
+            <svg class="icon theme-icon theme-icon--sun" aria-hidden="true"><use href="#i-sun"/></svg><svg class="icon theme-icon theme-icon--moon" aria-hidden="true"><use href="#i-moon"/></svg>Theme
+          </button>
+        </p>
+      </div>
+    </main>
+  </div>
+
+  <div class="toasts" style="top: 16px" role="region" aria-label="Notifications" aria-live="polite">
+    {% with messages = get_flashed_messages(with_categories=true) %}{% for category, message in messages %}
+    <div class="toast tone-{{ category|flash_tone }}" role="{{ 'alert' if category in ('danger', 'error') else 'status' }}">
+      {{ icon(category|flash_icon) }}<div class="toast__msg">{{ message }}</div>
+      <button class="btn btn--ghost btn--icon btn--sm" type="button" data-toast-close aria-label="Dismiss notification">{{ icon('i-x') }}</button>
+    </div>{% endfor %}{% endwith %}
+  </div>
+  <dialog id="confirm-dialog" class="dialog" aria-labelledby="dialog-title"><div class="dialog__body"><h2 id="dialog-title" data-dialog-title></h2><p class="muted mb-0" data-dialog-message></p></div><div class="dialog__foot"><button class="btn btn--secondary" type="button" data-dialog-cancel>Cancel</button><button class="btn" type="button" data-dialog-ok>Confirm</button></div></dialog>
+</body>
+</html>

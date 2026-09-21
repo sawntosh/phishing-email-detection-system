@@ -1,40 +1,114 @@
 {% extends "base.html" %}
-{% block title %}Analyse email{% endblock %}
+{% from "_macros.html" import icon with context %}
+{% block title %}Analyze Email{% endblock %}
+{% block crumbs %}<nav class="crumbs" aria-label="Breadcrumb"><a href="{{ url_for('detector.dashboard') }}">Dashboard</a>{{ icon('i-chevron-right') }}<span aria-current="page">Analyze Email</span></nav>{% endblock %}
 {% block content %}
-<h1>Analyse an email</h1>
-<p class="mono">Choose <b>one</b> way to submit. Both go through the same Zero-Trust ingestion pipeline (authorisation → size/MIME allow-list → structural parse → content sanitisation → attachment containment) before any analysis runs, and flagged messages are quarantined by default. Maximum size 5&nbsp;MB.</p>
+<div class="page-header">
+  <div>
+    <h1>Analyze an email</h1>
+    <p>Paste the message or upload an <code>.eml</code> or <code>.txt</code> file (max 5&nbsp;MB). Choose <b>one</b> way to submit. Links are analysed but never opened, and attachments are never opened or executed.</p>
+  </div>
+</div>
 
-<div class="card">
-  <h3 style="margin-top:0;">Option 1 &mdash; Analyse a pasted message</h3>
-  <form method="POST" action="{{ url_for('detector.upload') }}">
-    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
-    <label for="message_text">MESSAGE CONTENT</label>
-    <textarea id="message_text" name="message_text" rows="9" maxlength="500000"
-              placeholder="Paste the email text here. Links in it are analysed too. You can also paste a full raw email including its headers (from your mail client's &quot;view source&quot;) to include SPF/DKIM/DMARC and sender checks."></textarea>
-    <div class="grid" style="grid-template-columns: 1fr 1fr;">
-      <div>
-        <label for="message_subject">Subject (optional)</label>
-        <input id="message_subject" type="text" name="message_subject" maxlength="200" placeholder="e.g. Urgent: verify your account">
-      </div>
-      <div>
-        <label for="message_sender">Sender (optional)</label>
-        <input id="message_sender" type="text" name="message_sender" maxlength="200" placeholder='e.g. "PayPal Support" &lt;help@paypa1-secure.com&gt;'>
+<div id="form-error" class="alert tone-danger mb-2" role="alert" hidden>{{ icon('i-x-circle') }}<div data-error-text></div></div>
+
+<div class="grid grid--main-side">
+  <div class="card">
+    <div class="card__body">
+      <form id="paste-form" method="POST" action="{{ url_for('detector.upload') }}" novalidate>
+        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+        <div class="row row--between" style="align-items:baseline">
+          <h2 class="mb-0">Analyse a pasted message</h2>
+          <span class="row small"><span class="muted">Try an example:</span>
+            <button class="btn btn--ghost btn--sm" type="button" data-example="phish">Phishing sample</button>
+            <button class="btn btn--ghost btn--sm" type="button" data-example="legit">Legitimate sample</button>
+          </span>
+        </div>
+        <div class="field mt-1">
+          <label for="message_text" class="visually-hidden">Email content</label>
+          <textarea id="message_text" class="textarea" name="message_text" rows="10" maxlength="500000"
+                    placeholder="Paste email content here…&#10;&#10;You can also paste a full raw email including its headers (from your mail client's “view source”) to include SPF/DKIM/DMARC and sender checks."></textarea>
+          <span class="field__hint"><span id="char-count">0</span> characters · pasted plain text has no mail headers, so SPF/DKIM/DMARC show as “not evaluated”.</span>
+        </div>
+        <div class="form-row">
+          <div class="field"><label for="message_subject">Subject (optional)</label><input id="message_subject" class="input" type="text" name="message_subject" maxlength="200" placeholder="e.g. Urgent: verify your account"></div>
+          <div class="field"><label for="message_sender">Sender (optional)</label><input id="message_sender" class="input" type="text" name="message_sender" maxlength="200" placeholder='e.g. "PayPal Support" &lt;help@paypa1-secure.com&gt;'></div>
+        </div>
+        <button class="btn btn--lg" type="submit" data-submit>{{ icon('i-shield-check') }}Analyze Email</button>
+      </form>
+
+      <div class="divider" aria-hidden="true">OR</div>
+
+      <form id="file-form" method="POST" action="{{ url_for('detector.upload') }}" enctype="multipart/form-data" novalidate>
+        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+        <h2>Upload an email file</h2>
+        <label class="dropzone" id="dropzone" for="email_file">
+          <span class="dropzone__icon">{{ icon('i-upload', 'icon--xl') }}</span>
+          <strong>Drag &amp; drop an email file here</strong><br>
+          <span class="muted">or click to browse · <code>.eml</code> or <code>.txt</code> · up to 5 MB</span>
+          <input id="email_file" type="file" name="email_file" accept=".eml,.txt">
+        </label>
+        <div class="filechip" id="filechip" hidden>{{ icon('i-file') }}<span id="filename" style="flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap"></span><span class="muted small" id="filesize"></span>
+          <button class="btn btn--ghost btn--sm btn--icon" type="button" id="clear-file" aria-label="Remove selected file">{{ icon('i-x') }}</button></div>
+        <button class="btn btn--lg mt-2" type="submit" data-submit id="file-submit" disabled>{{ icon('i-shield-check') }}Run analysis</button>
+        <p class="muted small mt-1 mb-0">Outlook <code>.msg</code> files are not supported yet. Export the message as <code>.eml</code> first.</p>
+      </form>
+    </div>
+  </div>
+
+  <aside class="stack" aria-label="How analysis works">
+    <div class="card">
+      <div class="card__header"><h2>{{ icon('i-lock') }}Safe by design</h2></div>
+      <div class="card__body">
+        <ul class="list-plain small">
+          <li class="row" style="flex-wrap:nowrap;align-items:flex-start">{{ icon('i-check-circle') }}<span>Every submission passes the Zero-Trust pipeline before any analysis runs.</span></li>
+          <li class="row" style="flex-wrap:nowrap;align-items:flex-start">{{ icon('i-check-circle') }}<span>Links are analysed statically; nothing is fetched automatically.</span></li>
+          <li class="row" style="flex-wrap:nowrap;align-items:flex-start">{{ icon('i-check-circle') }}<span>Attachments are hashed and discarded, never opened.</span></li>
+          <li class="row" style="flex-wrap:nowrap;align-items:flex-start">{{ icon('i-check-circle') }}<span>Flagged messages are quarantined by default.</span></li>
+        </ul>
       </div>
     </div>
-    <p class="mono">Pasted plain text has no mail headers, so SPF/DKIM/DMARC show as "not evaluated". Paste the full raw email to get those checks.</p>
-    <button class="button" type="submit">ANALYZE</button>
-  </form>
+    <div class="card">
+      <div class="card__header"><h2>{{ icon('i-activity') }}What you get</h2></div>
+      <div class="card__body small muted">A 0–100 risk score, the classification, and an evidence card for every reason: sender, links, headers, authentication and wording.</div>
+    </div>
+  </aside>
 </div>
 
-<p class="mono" style="text-align:center;">&mdash; or &mdash;</p>
-
-<div class="card">
-  <h3 style="margin-top:0;">Option 2 &mdash; Upload an email file</h3>
-  <form method="POST" action="{{ url_for('detector.upload') }}" enctype="multipart/form-data">
-    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
-    <label for="email_file">Email file (.eml or .txt)</label>
-    <input id="email_file" type="file" name="email_file" accept=".eml,.txt" required>
-    <button class="button" type="submit">Run analysis</button>
-  </form>
+<div class="overlay" id="analysis-overlay" role="dialog" aria-modal="true" aria-labelledby="overlay-title" aria-live="polite">
+  <div class="card overlay__card">
+    <h2 id="overlay-title" class="mb-0">Analyzing email…</h2>
+    <p class="muted small mb-0" id="overlay-sub">Preparing the submission</p>
+    <div class="progress mt-2" id="upload-progress" role="progressbar" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0" aria-label="Upload progress"><span style="--w: 0%"></span></div>
+    <ol class="steps" id="steps">
+      {% for label in ['Parsing email', 'Checking headers and sender', 'Analyzing URLs and domains', 'Calculating risk', 'Generating explanation'] %}
+      <li data-step><span class="step-ico">{{ icon('i-check') }}</span><span>{{ label }}</span></li>
+      {% endfor %}
+    </ol>
+  </div>
 </div>
+
+<template id="example-phish">From: "PayPal Security" &lt;security@paypa1-secure.com&gt;
+Reply-To: account-recovery@mail-verify.top
+Subject: Urgent: Verify your account now
+Authentication-Results: mx.example; spf=fail; dkim=fail; dmarc=fail
+
+Dear customer,
+
+We detected unusual activity on your account. Your account will be suspended within 24 hours unless you confirm your password and login credentials immediately.
+
+Click here to verify: http://paypa1-secure.com/verify?id=48213
+
+PayPal Security Team</template>
+<template id="example-legit">From: "Jordan Lee" &lt;jordan@company.com&gt;
+Subject: Q3 planning notes
+Authentication-Results: mx.example; spf=pass; dkim=pass; dmarc=pass
+
+Hi team,
+
+Thanks for joining today. I've attached the notes from the planning meeting. Let me know if you have any questions before we meet again next week.
+
+Jordan</template>
 {% endblock %}
+
+{% block scripts %}<script src="{{ url_for('static', filename='js/analyze.js') }}" defer></script>{% endblock %}

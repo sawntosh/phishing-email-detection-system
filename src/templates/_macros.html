@@ -1,0 +1,163 @@
+{# Reusable UI components. Import with:  {% from "_macros.html" import icon, verdict_badge ... %} #}
+
+{% macro icon(name, cls="") -%}
+<svg class="icon {{ cls }}" aria-hidden="true" focusable="false"><use href="#{{ name }}"/></svg>
+{%- endmacro %}
+
+{# SAFE / SUSPICIOUS / PHISHING badge: icon + text, never colour alone #}
+{% macro verdict_badge(verdict, large=false) -%}
+{% set v = verdict|verdict_view %}
+<span class="badge tone-{{ v.tone }}{{ ' badge--lg' if large }}">{{ icon(v.icon) }}{{ v.label }}</span>
+{%- endmacro %}
+
+{# LOW / MEDIUM / HIGH / CRITICAL badge for a 0-100 score #}
+{% macro band_badge(score, solid=false) -%}
+{% set b = score|risk_band %}
+<span class="badge tone-{{ b.tone }}{{ ' badge--solid' if solid }}" data-tooltip="{{ b.lo }}–{{ b.hi }}: {{ b.desc }}" tabindex="0">{{ icon(b.icon) }}{{ b.label }}</span>
+{%- endmacro %}
+
+{% macro severity_badge(level) -%}
+{% set s = level|severity_view %}
+<span class="badge tone-{{ s.tone }}">{{ icon(s.icon) }}{{ s.label }}</span>
+{%- endmacro %}
+
+{% macro tone_badge(text, tone="neutral", icon_name=none) -%}
+<span class="badge tone-{{ tone }}">{% if icon_name %}{{ icon(icon_name) }}{% endif %}{{ text }}</span>
+{%- endmacro %}
+
+{% macro kpi(label, value, icon_name, tone="info", sub="", decimals=0, suffix="") -%}
+<div class="card kpi card--hover tone-{{ tone }}">
+  <div class="kpi__icon">{{ icon(icon_name) }}</div>
+  <div>
+    <div class="kpi__label">{{ label }}</div>
+    <div class="kpi__value">{{ ('%.' ~ decimals ~ 'f')|format(value) }}{{ suffix }}</div>
+    {% if sub %}<div class="kpi__sub">{{ sub }}</div>{% endif %}
+  </div>
+</div>
+{%- endmacro %}
+
+{% macro empty_state(icon_name, title, text, cta_label="", cta_href="") -%}
+<div class="empty">
+  <div class="empty__icon">{{ icon(icon_name) }}</div>
+  <h3>{{ title }}</h3>
+  <p>{{ text }}</p>
+  {% if cta_label %}<a class="btn" href="{{ cta_href }}">{{ cta_label }}</a>{% endif %}
+</div>
+{%- endmacro %}
+
+{# circular gauge: score 0-100 #}
+{% macro ring(score, tone, size="168px", sub="/ 100") -%}
+<div class="ring tone-{{ tone }}" style="--v: {{ score|round(1) }}; --size: {{ size }};" role="img" aria-label="Risk score {{ score|round(1) }} out of 100">
+  <svg viewBox="0 0 120 120" aria-hidden="true"><circle class="track" cx="60" cy="60" r="54" pathLength="100"/><circle class="value" cx="60" cy="60" r="54" pathLength="100"/></svg>
+  <div class="ring__label"><span class="ring__num">{{ '%g'|format(score|round(1)) }}</span><span class="ring__sub">{{ sub }}</span></div>
+</div>
+{%- endmacro %}
+
+{# donut: segments = [(label, value, tone)] #}
+{% macro donut(segments, center_value, center_label) -%}
+{% set total = segments|sum(attribute=1) %}
+{% set ns = namespace(offset=0) %}
+<div class="donut">
+  <div class="donut__ring" role="img" aria-label="{% for s in segments %}{{ s[0] }}: {{ s[1] }}{{ '; ' if not loop.last }}{% endfor %}">
+    <svg viewBox="0 0 120 120" aria-hidden="true">
+      <circle cx="60" cy="60" r="50" pathLength="100" stroke="var(--surface-3)"/>
+      {% if total %}{% for s in segments if s[1] %}
+      {% set pct = 100.0 * s[1] / total %}
+      <circle class="seg tone-{{ s[2] }}" cx="60" cy="60" r="50" pathLength="100" stroke-dasharray="{{ pct|round(3) }} {{ (100 - pct)|round(3) }}" stroke-dashoffset="{{ (-ns.offset)|round(3) }}"/>
+      {% set ns.offset = ns.offset + pct %}{% endfor %}{% endif %}
+    </svg>
+    <div class="donut__center"><span class="kpi__value">{{ center_value }}</span><span class="faint small">{{ center_label }}</span></div>
+  </div>
+  <ul class="legend">
+    {% for s in segments %}
+    <li class="tone-{{ s[2] }}"><span class="dot" aria-hidden="true"></span>{{ s[0] }}<span class="legend__val">{{ s[1] }}{% if total %} <span class="faint small">({{ (100.0 * s[1] / total)|round(1) }}%)</span>{% endif %}</span></li>
+    {% endfor %}
+  </ul>
+</div>
+{%- endmacro %}
+
+{# horizontal bars: items = [(label, value)] #}
+{% macro hbars(items, tone="info", empty_text="No data yet.") -%}
+{% if items %}
+{% set peak = items|map(attribute=1)|max %}
+<div class="hbars tone-{{ tone }}">
+  {% for label, value in items %}
+  <div>
+    <div class="hbar__top"><span class="hbar__label" title="{{ label }}">{{ label }}</span><span class="hbar__val">{{ value }}</span></div>
+    <div class="progress"><span style="--w: {{ (100.0 * value / peak)|round(1) if peak else 0 }}%"></span></div>
+  </div>
+  {% endfor %}
+</div>
+{% else %}<p class="muted small mb-0">{{ empty_text }}</p>{% endif %}
+{%- endmacro %}
+
+{# SVG column chart: points = [{label, total, flagged}] #}
+{% macro trend_chart(points, height=150) -%}
+{% set peak = [points|map(attribute='total')|max, 1]|max %}
+{% set n = points|length %}
+{% set w = 600 %}{% set pad = 26 %}{% set slot = (w - pad) / n %}{% set bar = slot * 0.62 %}
+<svg class="chart" viewBox="0 0 {{ w }} {{ height + 26 }}" role="img" aria-label="Emails analysed per day; flagged emails highlighted">
+  {% set steps = 3 if peak > 3 else peak %}
+  {% for g in range(0, steps + 1) %}{% set y = (height - 6) - (g * (height - 12) / steps) %}
+  <line class="grid-line" x1="{{ pad }}" x2="{{ w }}" y1="{{ y|round(1) }}" y2="{{ y|round(1) }}"/>
+  <text x="0" y="{{ (y + 3)|round(1) }}">{{ (peak * g / steps)|round|int }}</text>{% endfor %}
+  {% for p in points %}
+    {% set x = pad + loop.index0 * slot + (slot - bar) / 2 %}
+    {% set h_total = (p.total / peak) * (height - 12) %}{% set h_flag = (p.flagged / peak) * (height - 12) %}
+    <g><title>{{ p.label }}: {{ p.total }} analysed, {{ p.flagged }} flagged</title>
+      <rect class="bar" x="{{ x|round(1) }}" y="{{ (height - 6 - h_total)|round(1) }}" width="{{ bar|round(1) }}" height="{{ h_total|round(1) }}" rx="3"/>
+      {% if p.flagged %}<rect class="bar bar--flag" x="{{ x|round(1) }}" y="{{ (height - 6 - h_flag)|round(1) }}" width="{{ bar|round(1) }}" height="{{ h_flag|round(1) }}" rx="3"/>{% endif %}
+    </g>
+    {% if loop.index0 % ([n // 7, 1]|max) == 0 %}<text x="{{ (x + bar / 2)|round(1) }}" y="{{ height + 14 }}" text-anchor="middle">{{ p.label }}</text>{% endif %}
+  {% endfor %}
+</svg>
+{%- endmacro %}
+
+{% macro pagination(page, pages, total, endpoint, args) -%}
+{% if pages > 1 %}
+<nav class="pagination" aria-label="Pagination">
+  <span>{{ total }} result{{ '' if total == 1 else 's' }} · page {{ page }} of {{ pages }}</span>
+  <span class="pagination__pages">
+    {% if page > 1 %}<a class="btn btn--secondary btn--sm" href="{{ url_for(endpoint, page=page - 1, **args) }}" rel="prev">{{ icon('i-chevron-left') }}Previous</a>{% endif %}
+    {% if page < pages %}<a class="btn btn--secondary btn--sm" href="{{ url_for(endpoint, page=page + 1, **args) }}" rel="next">Next{{ icon('i-chevron-right') }}</a>{% endif %}
+  </span>
+</nav>
+{% else %}<div class="pagination"><span>{{ total }} result{{ '' if total == 1 else 's' }}</span></div>{% endif %}
+{%- endmacro %}
+
+
+{# review / quarantine state of one submission #}
+{% macro status_badge(s) -%}
+{% if s.analyst_feedback == 'confirmed_phish' %}<span class="badge tone-danger">{{ icon('i-flag') }}Confirmed</span>
+{%- elif s.analyst_feedback == 'false_positive' %}<span class="badge tone-success">{{ icon('i-check') }}False positive</span>
+{%- elif s.quarantined %}<span class="badge tone-warning">{{ icon('i-lock') }}Quarantined</span>
+{%- elif s.verdict == 'legitimate' %}<span class="badge tone-success">{{ icon('i-check-circle') }}Clear</span>
+{%- else %}<span class="badge tone-info">{{ icon('i-eye') }}Released</span>{% endif %}
+{%- endmacro %}
+
+{# shared table of submissions (dashboard, history, review queue) #}
+{% macro submission_table(items, show_feedback=false) -%}
+<div class="table-wrap">
+  <table class="table table--stack">
+    <caption class="visually-hidden">Analysed emails</caption>
+    <thead><tr>
+      <th scope="col">Date</th><th scope="col">Subject</th><th scope="col">Sender</th><th scope="col">Classification</th>
+      <th scope="col">Risk score</th>{% if show_feedback %}<th scope="col">Analyst note</th>{% endif %}<th scope="col">Status</th><th scope="col"><span class="visually-hidden">Action</span></th>
+    </tr></thead>
+    <tbody>
+    {% for s in items %}
+      <tr>
+        <td data-label="Date" class="nowrap" title="{{ s.created_at|dt }}">{{ s.created_at|dt_short }}</td>
+        <td data-label="Subject"><div class="cell-stack"><span class="cell-main" title="{{ s.subject }}">{{ s.subject or '(no subject)' }}</span><span class="cell-sub">{{ s.original_filename }}</span></div></td>
+        <td data-label="Sender"><span class="cell-sub cell-sender" title="{{ s.sender }}">{{ s.sender or '—' }}</span></td>
+        <td data-label="Classification">{{ verdict_badge(s.verdict) }}</td>
+        <td data-label="Risk score"><span class="riskcell"><strong style="font-variant-numeric:tabular-nums">{{ s.risk_score|round(1) }}</strong>{{ band_badge(s.risk_score) }}</span></td>
+        {% if show_feedback %}<td data-label="Analyst note"><span class="cell-sub">{{ s.feedback_notes or '—' }}</span></td>{% endif %}
+        <td data-label="Status">{{ status_badge(s) }}</td>
+        <td data-label="Action" class="text-right"><a class="btn btn--secondary btn--sm btn--icon" href="{{ url_for('detector.view_result', submission_id=s.id) }}" title="View analysis" aria-label="View analysis of {{ s.subject or 'email' }} ({{ s.created_at|dt }})">{{ icon('i-eye') }}</a></td>
+      </tr>
+    {% endfor %}
+    </tbody>
+  </table>
+</div>
+{%- endmacro %}

@@ -1,0 +1,59 @@
+{% extends "base.html" %}
+{% from "_macros.html" import icon, tone_badge with context %}
+{% block title %}Settings{% endblock %}
+{% block crumbs %}<nav class="crumbs" aria-label="Breadcrumb"><a href="{{ url_for('detector.dashboard') }}">Dashboard</a>{{ icon('i-chevron-right') }}<span aria-current="page">Settings</span></nav>{% endblock %}
+{% block content %}
+<div class="page-header"><div><h1>Settings</h1><p>Your account, appearance and system status.</p></div></div>
+
+<div class="grid grid--2">
+  <section class="card" aria-labelledby="s-profile">
+    <div class="card__header"><h2 id="s-profile">{{ icon('i-user') }}Profile</h2>{{ tone_badge(current_user.role, 'critical' if current_user.is_admin else 'info') }}</div>
+    <div class="card__body">
+      <dl class="kv">
+        <dt>Username</dt><dd>{{ current_user.username }}</dd>
+        <dt>Email</dt><dd>{{ current_user.email }}</dd>
+        <dt>Role</dt><dd>{{ current_user.role|capitalize }}</dd>
+        <dt>Member since</dt><dd>{{ current_user.created_at|dt(false) }}</dd>
+        <dt>Last sign-in</dt><dd>{{ current_user.last_login_at|dt }}</dd>
+        <dt>Emails analysed</dt><dd>{{ submission_count }}</dd>
+      </dl>
+    </div>
+  </section>
+
+  <div class="stack">
+    <section class="card" aria-labelledby="s-sec">
+      <div class="card__header"><h2 id="s-sec">{{ icon('i-lock') }}Security</h2></div>
+      <div class="card__body">
+        <dl class="kv">
+          <dt>Two-factor authentication</dt><dd>{% if current_user.totp_enabled %}{{ tone_badge('Enabled', 'success', 'i-check-circle') }}{% else %}{{ tone_badge('Not enabled', 'warning', 'i-alert') }}{% endif %}</dd>
+          <dt>Password storage</dt><dd>Argon2id hash (never stored in plain text)</dd>
+          <dt>Session</dt><dd>Signs out after 30 minutes of inactivity</dd>
+        </dl>
+        <p class="muted small mt-1 mb-0">Changing your password from the interface is not available yet.</p>
+      </div>
+    </section>
+    <section class="card" aria-labelledby="s-look">
+      <div class="card__header"><h2 id="s-look">{{ icon('i-sun') }}Appearance</h2></div>
+      <div class="card__body row row--between">
+        <span class="muted">Switch between the dark and light theme. Your choice is remembered in this browser.</span>
+        <button class="btn btn--secondary" type="button" data-theme-toggle aria-pressed="true" aria-label="Switch to light theme"><svg class="icon theme-icon theme-icon--sun" aria-hidden="true"><use href="#i-sun"/></svg><svg class="icon theme-icon theme-icon--moon" aria-hidden="true"><use href="#i-moon"/></svg>Toggle theme</button>
+      </div>
+    </section>
+  </div>
+</div>
+
+{% if current_user.is_admin %}
+<section class="card mt-3" aria-labelledby="s-sys">
+  <div class="card__header"><h2 id="s-sys">{{ icon('i-server') }}System status</h2><span class="muted small">{{ APP_NAME }} v{{ APP_VERSION }}</span></div>
+  <div class="card__body">
+    <dl class="kv">
+      <dt>Text model</dt><dd>{% if system.text_model %}{{ tone_badge('Loaded', 'success', 'i-check-circle') }} <span class="muted small">trained on {{ system.trained_on or 'unknown data' }}{% if system.n_train %} · {{ system.n_train }} messages{% endif %}</span>{% else %}{{ tone_badge('Not trained', 'warning', 'i-alert') }} <span class="muted small">run <code>python train_model.py</code></span>{% endif %}</dd>
+      <dt>VirusTotal lookups</dt><dd>{{ tone_badge('Enabled' if system.virustotal else 'Off', 'success' if system.virustotal else 'neutral') }}</dd>
+      <dt>Redirect resolver</dt><dd>{{ tone_badge('Enabled' if system.resolver else 'Off', 'success' if system.resolver else 'neutral') }}</dd>
+      <dt>Offline blocklist</dt><dd>{{ system.blocklist }} domain{{ '' if system.blocklist == 1 else 's' }} loaded</dd>
+    </dl>
+    <p class="mt-1 mb-0"><a href="{{ url_for('admin.model_performance') }}">Model performance{{ icon('i-chevron-right') }}</a></p>
+  </div>
+</section>
+{% endif %}
+{% endblock %}

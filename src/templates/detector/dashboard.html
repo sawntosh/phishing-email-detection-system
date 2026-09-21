@@ -1,87 +1,94 @@
 {% extends "base.html" %}
+{% from "_macros.html" import icon, kpi, empty_state, donut, trend_chart, hbars, submission_table, band_badge with context %}
 {% block title %}Dashboard{% endblock %}
 {% block content %}
-<h1>Dashboard</h1>
-<div class="grid grid-4">
-  <div class="card stat"><div class="num">{{ stats.total }}</div><div class="label">Total analysed</div></div>
-  <div class="card stat"><div class="num" style="color:var(--danger)">{{ stats.phishing }}</div><div class="label">Phishing</div></div>
-  <div class="card stat"><div class="num" style="color:var(--warn)">{{ stats.suspicious }}</div><div class="label">Suspicious</div></div>
-  <div class="card stat"><div class="num" style="color:var(--ok)">{{ stats.legitimate }}</div><div class="label">Legitimate</div></div>
-</div>
-
-<div class="grid grid-4">
-  <div class="card stat"><div class="num">{{ stats.detection_rate }}%</div><div class="label">Detection rate (flagged / total)</div></div>
-  <div class="card stat"><div class="num">{{ stats.fp_rate }}%</div><div class="label">False-positive rate (of {{ stats.reviewed }} reviewed)</div></div>
-  <div class="card stat"><div class="num">{{ stats.precision_est }}%</div><div class="label">Analyst-confirmed precision</div></div>
-  <div class="card stat"><div class="num" style="color:var(--warn)">{{ stats.pending_review }}</div><div class="label">Awaiting analyst review</div></div>
-</div>
-
-<div class="card">
-  <h3>Verdict distribution</h3>
-  {% for label, key, color in [('Phishing','phishing','var(--danger)'), ('Suspicious','suspicious','var(--warn)'), ('Legitimate','legitimate','var(--ok)')] %}
-  <div style="display:flex; align-items:center; gap:10px; margin-bottom:6px;">
-    <span style="width:90px; color:var(--muted); font-size:.85rem;">{{ label }}</span>
-    <div class="score-bar" style="flex:1; margin:0;"><div style="width:{{ stats.verdict_pct[key] }}%; background:{{ color }};"></div></div>
-    <span style="width:52px; text-align:right; font-size:.85rem;">{{ stats.verdict_pct[key] }}%</span>
+<div class="page-header">
+  <div>
+    <h1>Security overview</h1>
+    <p>Live status of every email analysed{% if not current_user.is_admin %} by you{% endif %}. Figures are calculated from stored analyses.</p>
   </div>
-  {% endfor %}
+  <div class="page-actions"><a class="btn" href="{{ url_for('detector.upload') }}">{{ icon('i-mail-search') }}Analyze Email</a></div>
 </div>
 
-<div class="card">
-  <h3>Last 14 days</h3>
-  <table>
-    <tr><th>Day</th><th>Analysed</th><th>Flagged</th><th style="width:50%"></th></tr>
-    {% for d in trend %}
-    <tr>
-      <td>{{ d.day }}</td><td>{{ d.total }}</td><td>{{ d.flagged }}</td>
-      <td><div class="score-bar" style="margin:0;"><div style="width:{{ (100 * d.total / trend_max)|round(0) }}%; background:var(--accent);"></div></div></td>
-    </tr>
-    {% endfor %}
-  </table>
-</div>
+{% if stats.total == 0 %}
+<div class="card">{{ empty_state('i-inbox', 'No email analyses yet', 'Submit your first email to begin detecting phishing threats. Every result is explained with the evidence behind it.', 'Analyze Email', url_for('detector.upload')) }}</div>
+{% else %}
 
-<div class="card">
-  <h3>Most common indicators (last 200 scans)</h3>
-  <table>
-    <tr><th>Indicator</th><th>Meaning</th><th>Occurrences</th></tr>
-    {% for ind, count in top_indicators %}
-    <tr><td class="mono">{{ ind }}</td><td>{{ ind|explain_indicator or '—' }}</td><td>{{ count }}</td></tr>
-    {% else %}
-    <tr><td colspan="3">No submissions yet.</td></tr>
-    {% endfor %}
-  </table>
-</div>
+<section aria-label="Key figures" class="stack">
+  <div class="grid grid--4">
+    {{ kpi('Total Emails Analysed', stats.total, 'i-mail', 'info', 'All time') }}
+    {{ kpi('Phishing Detected', stats.phishing, 'i-alert-octagon', 'danger', stats.verdict_pct.phishing ~ '% of all emails') }}
+    {{ kpi('Suspicious', stats.suspicious, 'i-alert', 'warning', stats.verdict_pct.suspicious ~ '% of all emails') }}
+    {{ kpi('Safe', stats.legitimate, 'i-shield-check', 'success', stats.verdict_pct.legitimate ~ '% of all emails') }}
+  </div>
+  <div class="grid grid--4">
+    {{ kpi('Average Risk Score', stats.avg_risk, 'i-target', (stats.avg_risk|risk_band).tone, 'out of 100 · ' ~ (stats.avg_risk|risk_band).label|lower ~ ' band', 1) }}
+    {{ kpi('Detection Rate', stats.detection_rate, 'i-activity', 'info', 'phishing + suspicious ÷ total', 1, '%') }}
+    {{ kpi('High-Risk Emails', stats.high_risk, 'i-flame', 'critical', 'risk score 60 or higher') }}
+    {{ kpi("Today's Analyses", stats.today, 'i-clock', 'info', 'since 00:00 UTC') }}
+  </div>
+</section>
 
-<div class="card">
-  <h3>Tool activity</h3>
-  <p class="mono">Threat-intel lookups run: {{ stats.intel_checked }} &nbsp;|&nbsp; flagged suspicious/malicious by external intel: {{ stats.intel_bad }}
-    {% if current_user.is_admin %}&nbsp;|&nbsp; <a href="{{ url_for('admin.model_performance') }}" style="color:var(--accent);">Model performance &rarr;</a>{% endif %}</p>
-</div>
-
-<div class="card">
-  <div style="display:flex; justify-content:space-between; align-items:center;">
-    <h3>Recent submissions</h3>
-    <div>
-      <a class="button secondary" href="{{ url_for('detector.export_all', fmt='csv') }}">Export all CSV</a>
-      <a class="button secondary" href="{{ url_for('detector.export_all', fmt='json') }}">Export all JSON</a>
-      <a class="button" href="{{ url_for('detector.upload') }}">+ Analyse email</a>
+<section class="card mt-3" aria-labelledby="risk-dist-title">
+  <div class="card__header"><h2 id="risk-dist-title">{{ icon('i-target') }}Risk distribution</h2><span class="muted small">Every email falls into exactly one band</span></div>
+  <div class="card__body">
+    <div class="riskscale">
+      {% for item in stats.band_counts %}{% set b = item.band %}
+      <div class="riskband tone-{{ b.tone }}">
+        <div class="riskband__head">{{ icon(b.icon) }}{{ b.label }}</div>
+        <div class="riskband__range">Score {{ b.lo }}–{{ b.hi }}</div>
+        <div class="riskband__count">{{ item.count }}</div>
+        <div class="riskband__desc">{{ b.desc }}</div>
+        <div class="progress" role="img" aria-label="{{ item.pct }}% of emails"><span style="--w: {{ item.pct }}%"></span></div>
+      </div>
+      {% endfor %}
     </div>
   </div>
-  <table>
-    <tr><th>ID</th><th>Subject</th><th>Sender</th><th>Verdict</th><th>Score</th><th>Quarantined</th><th></th></tr>
-    {% for s in submissions %}
-    <tr>
-      <td>{{ s.id }}</td>
-      <td>{{ s.subject or '(no subject)' }}</td>
-      <td>{{ s.sender }}</td>
-      <td><span class="badge badge-{{ s.verdict }}">{{ s.verdict }}</span></td>
-      <td>{{ s.risk_score }}</td>
-      <td>{{ 'Yes' if s.quarantined else 'No' }}</td>
-      <td><a href="{{ url_for('detector.view_result', submission_id=s.id) }}" style="color:var(--accent);">View</a></td>
-    </tr>
-    {% else %}
-    <tr><td colspan="7">No submissions yet — analyse an .eml file to get started.</td></tr>
-    {% endfor %}
-  </table>
+</section>
+
+<div class="grid grid--2 mt-3">
+  <section class="card" aria-labelledby="verdict-title">
+    <div class="card__header"><h2 id="verdict-title">{{ icon('i-shield') }}Verdict distribution</h2></div>
+    <div class="card__body">
+      {{ donut([('Phishing', stats.phishing, 'danger'), ('Suspicious', stats.suspicious, 'warning'), ('Safe', stats.legitimate, 'success')], stats.total, 'emails') }}
+    </div>
+  </section>
+  <section class="card" aria-labelledby="quality-title">
+    <div class="card__header"><h2 id="quality-title">{{ icon('i-activity') }}Detection quality</h2>
+      {% if stats.pending_review %}<a class="btn btn--secondary btn--sm" href="{{ url_for('detector.review_queue') }}">{{ icon('i-flag') }}{{ stats.pending_review }} awaiting review</a>{% endif %}</div>
+    <div class="card__body">
+      <dl class="kv">
+        <dt>Detection rate</dt><dd><strong>{{ stats.detection_rate }}%</strong> <span class="muted small">of emails were flagged</span></dd>
+        <dt>False-positive rate</dt><dd><strong>{{ stats.fp_rate }}%</strong> <span class="muted small">of {{ stats.reviewed }} analyst-reviewed emails</span></dd>
+        <dt>Confirmed precision</dt><dd><strong>{{ stats.precision_est }}%</strong> <span class="muted small">{{ stats.confirmed }} confirmed phishing</span></dd>
+        <dt>Threat-intel lookups</dt><dd><strong>{{ stats.intel_checked }}</strong> <span class="muted small">run · {{ stats.intel_bad }} flagged by external intel</span></dd>
+      </dl>
+      {% if not stats.reviewed %}<p class="muted small mt-1 mb-0">Precision and false-positive rate appear once analysts review flagged emails.</p>{% endif %}
+    </div>
+  </section>
 </div>
+
+<div class="grid grid--main-side mt-3">
+  <section class="card" aria-labelledby="trend-title">
+    <div class="card__header"><h2 id="trend-title">{{ icon('i-chart') }}Last 14 days</h2>
+      <span class="row small muted" style="gap:14px"><span><span class="dot tone-info" style="background:var(--primary);opacity:.6"></span> Analysed</span><span><span class="dot tone-danger"></span> Flagged</span></span></div>
+    <div class="card__body">
+      {% set pts = [] %}{% for d in trend %}{% set _ = pts.append({'label': d.day, 'total': d.total, 'flagged': d.flagged}) %}{% endfor %}
+      {{ trend_chart(pts, 250) }}
+    </div>
+  </section>
+  <section class="card" aria-labelledby="ind-title">
+    <div class="card__header"><h2 id="ind-title">{{ icon('i-list') }}Most common indicators</h2></div>
+    <div class="card__body">
+      {% set rows = [] %}{% for ind, count in top_indicators %}{% set _ = rows.append((ind|indicator_title, count)) %}{% endfor %}
+      {{ hbars(rows, 'warning', 'No indicators triggered yet.') }}
+    </div>
+  </section>
+</div>
+
+<section class="card mt-3" aria-labelledby="recent-title">
+  <div class="card__header"><h2 id="recent-title">{{ icon('i-clock') }}Recent submissions</h2><a class="btn btn--secondary btn--sm" href="{{ url_for('detector.history') }}">View all history{{ icon('i-chevron-right') }}</a></div>
+  <div class="card__body--flush">{{ submission_table(submissions[:8]) }}</div>
+</section>
+{% endif %}
 {% endblock %}

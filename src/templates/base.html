@@ -1,39 +1,122 @@
-<!DOCTYPE html>
-<html lang="en">
+{% from "_macros.html" import icon, tone_badge with context %}<!DOCTYPE html>
+<html lang="en" data-theme="dark">
 <head>
   <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>{% block title %}Explainable Phishing Detector{% endblock %}</title>
-  <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="color-scheme" content="dark light">
+  <title>{% block title %}{{ APP_NAME }}{% endblock %} · {{ APP_NAME }}</title>
+  <script src="{{ url_for('static', filename='js/theme-init.js') }}"></script>
+  <link rel="stylesheet" href="{{ url_for('static', filename='css/app.css') }}">
+  <script src="{{ url_for('static', filename='js/app.js') }}" defer></script>
+  {% block head %}{% endblock %}
 </head>
 <body>
-  <nav class="navbar">
-    <a class="brand" href="{{ url_for('detector.dashboard') if current_user.is_authenticated else url_for('auth.login') }}">🛡️ PhishDetect</a>
-    {% if current_user.is_authenticated %}
-    <div class="nav-links">
-      <a href="{{ url_for('detector.dashboard') }}">Dashboard</a>
-      <a href="{{ url_for('detector.upload') }}">Analyse email</a>
-      {% if current_user.role in ['analyst','admin'] %}<a href="{{ url_for('detector.review_queue') }}">Review queue</a>{% endif %}
-      {% if current_user.is_admin %}
-        <a href="{{ url_for('admin.audit_log') }}">Audit log</a>
-        <a href="{{ url_for('admin.model_performance') }}">Model performance</a>
-        <a href="{{ url_for('admin.users') }}">Users</a>
-      {% endif %}
-      <span class="user-chip">{{ current_user.username }} ({{ current_user.role }})</span>
-      <a href="{{ url_for('auth.logout') }}">Logout</a>
-    </div>
-    {% endif %}
-  </nav>
+  <a class="skip-link" href="#main">Skip to main content</a>
+  {% include "_icons.html" %}
+  {% if current_user.is_authenticated %}
+  {% set ep = request.endpoint or '' %}
+  <div class="app">
+    <aside class="sidebar" id="sidebar" aria-label="Sidebar">
+      <a class="brand" href="{{ url_for('detector.dashboard') }}" aria-label="{{ APP_NAME }} home">
+        <span class="brand__mark">{{ icon('i-shield-check') }}</span>
+        <span><span class="brand__name">{{ APP_NAME }}</span><span class="brand__tag">{{ APP_TAGLINE }}</span></span>
+      </a>
 
-  <main class="container">
-    {% with messages = get_flashed_messages(with_categories=true) %}
-      {% if messages %}
-        {% for category, message in messages %}
-          <div class="flash flash-{{ category }}">{{ message }}</div>
-        {% endfor %}
-      {% endif %}
-    {% endwith %}
-    {% block content %}{% endblock %}
-  </main>
+      <nav aria-label="Primary">
+        <div class="nav-group">Overview</div>
+        <ul class="nav">
+          <li><a href="{{ url_for('detector.dashboard') }}" {% if ep == 'detector.dashboard' %}aria-current="page"{% endif %}>{{ icon('i-grid') }}Dashboard</a></li>
+          <li><a href="{{ url_for('detector.upload') }}" {% if ep == 'detector.upload' %}aria-current="page"{% endif %}>{{ icon('i-mail-search') }}Analyze Email</a></li>
+          <li><a href="{{ url_for('detector.history') }}" {% if ep == 'detector.history' or ep == 'detector.view_result' %}aria-current="page"{% endif %}>{{ icon('i-clock') }}Analysis History</a></li>
+          <li><a href="{{ url_for('detector.analytics') }}" {% if ep == 'detector.analytics' %}aria-current="page"{% endif %}>{{ icon('i-chart') }}Analytics</a></li>
+        </ul>
+
+        {% if current_user.role in ['analyst', 'admin'] %}
+        <div class="nav-group">Workflow</div>
+        <ul class="nav">
+          <li><a href="{{ url_for('detector.review_queue') }}" {% if ep == 'detector.review_queue' %}aria-current="page"{% endif %}>{{ icon('i-flag') }}Review Queue
+            {% if nav_pending_review %}<span class="badge tone-warning" aria-label="{{ nav_pending_review }} awaiting review">{{ nav_pending_review }}</span>{% endif %}</a></li>
+        </ul>
+        {% endif %}
+
+        {% if current_user.is_admin %}
+        <div class="nav-group">Administration</div>
+        <ul class="nav">
+          <li><a href="{{ url_for('admin.users') }}" {% if ep == 'admin.users' %}aria-current="page"{% endif %}>{{ icon('i-users') }}Users</a></li>
+          <li><a href="{{ url_for('admin.audit_log') }}" {% if ep == 'admin.audit_log' %}aria-current="page"{% endif %}>{{ icon('i-fingerprint') }}Audit Log</a></li>
+          <li><a href="{{ url_for('admin.model_performance') }}" {% if ep == 'admin.model_performance' %}aria-current="page"{% endif %}>{{ icon('i-activity') }}Model Performance</a></li>
+        </ul>
+        {% endif %}
+
+        <div class="nav-group">Account</div>
+        <ul class="nav">
+          <li><a href="{{ url_for('detector.settings') }}" {% if ep == 'detector.settings' %}aria-current="page"{% endif %}>{{ icon('i-sliders') }}Settings</a></li>
+          <li><a href="{{ url_for('auth.logout') }}">{{ icon('i-logout') }}Logout</a></li>
+        </ul>
+      </nav>
+
+      <div class="sidebar__foot">
+        <div class="usercard">
+          <span class="avatar" aria-hidden="true">{{ current_user.username|initials }}</span>
+          <span style="min-width:0">
+            <span class="usercard__name" style="display:block">{{ current_user.username }}</span>
+            <span class="usercard__meta">{{ current_user.role|capitalize }}</span>
+          </span>
+        </div>
+        <div class="version">{{ APP_NAME }} v{{ APP_VERSION }}</div>
+      </div>
+    </aside>
+    <div class="sidebar-backdrop" data-sidebar-close></div>
+
+    <div class="main-col">
+      <header class="topbar">
+        <button class="btn btn--ghost btn--icon menu-btn" type="button" data-sidebar-toggle aria-controls="sidebar" aria-expanded="false" aria-label="Open navigation menu">{{ icon('i-menu', 'icon--lg') }}</button>
+        <div style="min-width:0">
+          {% block crumbs %}{% endblock %}
+          <p class="topbar__title mb-0">{{ self.title() }}</p>
+        </div>
+        <div class="topbar__spacer"></div>
+        {% if nav_last_analysis %}<span class="topbar__meta" title="Time of the most recent analysis">{{ icon('i-clock') }}Last analysis: {{ nav_last_analysis|dt }}</span>{% endif %}
+        <button class="btn btn--ghost btn--icon" type="button" data-theme-toggle aria-pressed="true" aria-label="Switch to light theme" title="Switch to light theme">
+          <svg class="icon theme-icon theme-icon--sun" aria-hidden="true"><use href="#i-sun"/></svg><svg class="icon theme-icon theme-icon--moon" aria-hidden="true"><use href="#i-moon"/></svg>
+        </button>
+        <a class="row" href="{{ url_for('detector.settings') }}" style="gap:8px; text-decoration:none; color:inherit" aria-label="Your account settings">
+          <span class="avatar" aria-hidden="true" style="width:32px;height:32px;font-size:.8rem">{{ current_user.username|initials }}</span>
+          <span class="hide-sm">{{ tone_badge(current_user.role, 'info' if current_user.role != 'admin' else 'critical') }}</span>
+        </a>
+      </header>
+
+      <main id="main" class="page" tabindex="-1">
+  {% else %}
+  <main id="main" class="page page--public" tabindex="-1">
+  {% endif %}
+        {% block content %}{% endblock %}
+      </main>
+  {% if current_user.is_authenticated %}
+    </div>
+  </div>
+  {% endif %}
+
+  {# flash messages become toasts (still readable without JS) #}
+  <div class="toasts" role="region" aria-label="Notifications" aria-live="polite">
+    {% with messages = get_flashed_messages(with_categories=true) %}{% for category, message in messages %}
+    <div class="toast tone-{{ category|flash_tone }}" role="{{ 'alert' if category in ('danger', 'error') else 'status' }}">
+      {{ icon(category|flash_icon) }}<div class="toast__msg">{{ message }}</div>
+      <button class="btn btn--ghost btn--icon btn--sm" type="button" data-toast-close aria-label="Dismiss notification">{{ icon('i-x') }}</button>
+    </div>{% endfor %}{% endwith %}
+  </div>
+
+  <dialog id="confirm-dialog" class="dialog" aria-labelledby="dialog-title">
+    <div class="dialog__body">
+      <h2 id="dialog-title" data-dialog-title>Please confirm</h2>
+      <p class="muted mb-0" data-dialog-message></p>
+    </div>
+    <div class="dialog__foot">
+      <button class="btn btn--secondary" type="button" data-dialog-cancel>Cancel</button>
+      <button class="btn" type="button" data-dialog-ok>Confirm</button>
+    </div>
+  </dialog>
+  <noscript><div class="alert tone-warning" style="margin:12px">{{ icon('i-alert') }}<div>JavaScript is disabled. The application still works; theme switching, tabs and animations are unavailable.</div></div></noscript>
+  {% block scripts %}{% endblock %}
 </body>
 </html>

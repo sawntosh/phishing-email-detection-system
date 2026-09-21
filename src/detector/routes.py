@@ -1,22 +1,25 @@
 import csv
 import io
 import json
-from collections import OrderedDict
-from datetime import timedelta
+from collections import Counter, OrderedDict
+from datetime import datetime, time as dtime, timedelta
+from math import ceil
 
 from flask import (
     Blueprint, render_template, request, redirect, url_for, flash,
     send_file, current_app, abort,
 )
 from flask_login import login_required, current_user
+from sqlalchemy import func, or_
 
 from models import db, EmailSubmission, ExtractedIndicator, AuditLog, utcnow
 from security_utils import limiter, analyst_or_admin_required
 from analysis import zero_trust, risk_engine, threat_intel
-from analysis.explanations import defang
+from analysis.explanations import brand_display, defang, indicator_title
 from analysis.url_analysis import analyse_url
 from analysis.zero_trust import ZeroTrustRejection
-from detector import pasted
+from detector import pasted, presenter
+from ui_helpers import RISK_BANDS, VERDICTS
 
 detector_bp = Blueprint("detector", __name__, template_folder="../templates/detector")
 
@@ -48,6 +51,14 @@ def _visible_query():
 
 def _pct(part, whole):
     return round(100.0 * part / whole, 1) if whole else 0.0
+
+
+def _band_counts(query):
+    counts = []
+    for band in RISK_BANDS:
+        counts.append(query.filter(EmailSubmission.risk_score >= band["lo"],
+                                   EmailSubmission.risk_score < band["hi"] + 1).count())
+    return counts
 
 
 @detector_bp.route("/")
@@ -89,8 +100,13 @@ def dashboard():
     intel_checked = intel_q.filter(ExtractedIndicator.intel_verdict.isnot(None)).count()
     intel_bad = intel_q.filter(ExtractedIndicator.intel_verdict.in_(("malicious", "suspicious"))).count()
 
+    band_counts = [{"band": b, "count": n, "pct": _pct(n, total)} for b, n in zip(RISK_BANDS, _band_counts(q))]
     stats = {
         "total": total, "phishing": phishing, "suspicious": suspicious, "legitimate": legitimate,
+        "avg_risk": round(q.with_entities(func.avg(EmailSubmission.risk_score)).scalar() or 0.0, 1),
+        "high_risk": q.filter(EmailSubmission.risk_score >= RISK_BANDS[2]["lo"]).count(),
+        "today": q.filter(EmailSubmission.created_at >= datetime.combine(utcnow().date(), dtime.min)).count(),
+        "band_counts": band_counts,
         "detection_rate": _pct(flagged, total),
         "confirmed": confirmed, "false_positives": false_positives, "reviewed": reviewed,
         "fp_rate": _pct(false_positives, reviewed), "precision_est": _pct(confirmed, reviewed),
@@ -103,6 +119,13 @@ def dashboard():
         "detector/dashboard.html", submissions=recent[:50], stats=stats, top_indicators=top_indicators,
         trend=trend, trend_max=max([d["total"] for d in trend] + [1]),
     )
+
+
+def _header(headers, name):
+    for key, value in headers.items():
+        if key.lower() == name.lower():
+            return str(value)[:320]
+    return None
 
 
 def _is_listed(findings):
@@ -208,6 +231,8 @@ def upload():
             sender_display_name=scored["header_report"]["display_name"],
             subject=result.subject,
             received_headers_summary=json.dumps(list(result.raw_headers.keys())),
+            reply_to=_header(result.raw_headers, "Reply-To"),
+            return_path=_header(result.raw_headers, "Return-Path"),
             spf_result=scored["header_report"]["spf"],
             dkim_result=scored["header_report"]["dkim"],
             dmarc_result=scored["header_report"]["dmarc"],
@@ -255,10 +280,12 @@ def _get_owned_submission(submission_id):
 def view_result(submission_id):
     submission = _get_owned_submission(submission_id)
     explanations = submission.ml_explanation()
+    structured_terms = [e for e in explanations if e.get("source") != "text"]
+    text_terms = [e for e in explanations if e.get("source") == "text"]
     return render_template(
         "detector/result.html", s=submission,
-        structured_terms=[e for e in explanations if e.get("source") != "text"],
-        text_terms=[e for e in explanations if e.get("source") == "text"],
+        structured_terms=structured_terms, text_terms=text_terms,
+        view=presenter.build_result_view(submission, structured_terms, text_terms),
         intel_configured=bool(current_app.config.get("VIRUSTOTAL_API_KEY")),
         resolver_enabled=bool(current_app.config.get("ENABLE_REDIRECT_RESOLVER")),
     )
@@ -433,6 +460,8 @@ def _submission_dict(submission):
         "filename": submission.original_filename,
         "sha256": submission.sha256_hash,
         "sender": submission.sender,
+        "reply_to": submission.reply_to,
+        "return_path": submission.return_path,
         "subject": submission.subject,
         "spf": submission.spf_result,
         "dkim": submission.dkim_result,
@@ -507,3 +536,136 @@ def export_all(fmt):
         return send_file(io.BytesIO(buf.getvalue().encode()), mimetype="text/csv", as_attachment=True,
                          download_name="submissions.csv")
     abort(400)
+
+
+# --------------------------------------------------------------------------
+# History, analytics and settings: read-only views over data already stored
+# --------------------------------------------------------------------------
+HISTORY_PAGE_SIZE = 15
+_HISTORY_SORTS = {
+    "newest": lambda: EmailSubmission.created_at.desc(),
+    "oldest": lambda: EmailSubmission.created_at.asc(),
+    "score_desc": lambda: EmailSubmission.risk_score.desc(),
+    "score_asc": lambda: EmailSubmission.risk_score.asc(),
+}
+
+
+def _history_filters(query, term, verdict, status):
+    if term:
+        query = query.filter(or_(
+            EmailSubmission.subject.contains(term, autoescape=True),
+            EmailSubmission.sender.contains(term, autoescape=True),
+            EmailSubmission.original_filename.contains(term, autoescape=True),
+        ))
+    if verdict in VERDICTS:
+        query = query.filter(EmailSubmission.verdict == verdict)
+    flagged = EmailSubmission.verdict.in_(FLAGGED_VERDICTS)
+    if status == "quarantined":
+        query = query.filter(EmailSubmission.quarantined.is_(True))
+    elif status == "released":
+        query = query.filter(flagged, EmailSubmission.quarantined.is_(False), EmailSubmission.analyst_feedback.is_(None))
+    elif status == "pending":
+        query = query.filter(flagged, EmailSubmission.analyst_feedback.is_(None))
+    elif status in ("confirmed_phish", "false_positive"):
+        query = query.filter(EmailSubmission.analyst_feedback == status)
+    return query
+
+
+@detector_bp.route("/history")
+@login_required
+def history():
+    term = request.args.get("q", "").strip()[:100]
+    verdict = request.args.get("verdict", "all")
+    status = request.args.get("status", "all")
+    sort = request.args.get("sort", "newest")
+    if sort not in _HISTORY_SORTS:
+        sort = "newest"
+    query = _history_filters(_visible_query(), term, verdict, status)
+    total = query.count()
+    pages = max(1, ceil(total / HISTORY_PAGE_SIZE))
+    try:
+        page = min(max(int(request.args.get("page", 1)), 1), pages)
+    except ValueError:
+        page = 1
+    items = query.order_by(_HISTORY_SORTS[sort]()).offset((page - 1) * HISTORY_PAGE_SIZE).limit(HISTORY_PAGE_SIZE).all()
+    active = {k: v for k, v in (("q", term), ("verdict", verdict), ("status", status), ("sort", sort))
+              if v and v not in ("all", "newest")}
+    return render_template(
+        "detector/history.html", items=items, page=page, pages=pages, total=total, args=active,
+        term=term, verdict=verdict, status=status, sort=sort,
+        has_any=_visible_query().count() > 0,
+    )
+
+
+@detector_bp.route("/analytics")
+@login_required
+def analytics():
+    scope = _visible_query()
+    rows = scope.order_by(EmailSubmission.created_at.desc()).limit(2000).all()
+    total = len(rows)
+
+    verdict_counts = Counter(r.verdict for r in rows)
+    band_counts = Counter(risk_key(r.risk_score) for r in rows)
+    histogram = [0] * 10
+    for r in rows:
+        histogram[min(int((r.risk_score or 0) // 10), 9)] += 1
+
+    today = utcnow().date()
+    days = OrderedDict((today - timedelta(days=n), {"total": 0, "flagged": 0}) for n in range(29, -1, -1))
+    indicators, brands = Counter(), Counter()
+    auth = {m: Counter() for m in ("spf", "dkim", "dmarc")}
+    for r in rows:
+        bucket = days.get(r.created_at.date())
+        if bucket:
+            bucket["total"] += 1
+            bucket["flagged"] += int(r.verdict in FLAGGED_VERDICTS)
+        for raw in r.rule_indicators():
+            indicators[indicator_title(raw)] += 1
+            code = raw.split(": ", 1)[-1]
+            if code.startswith("lookalike_of_"):
+                brands[brand_display(code[len("lookalike_of_"):])] += 1
+            elif code.startswith("brand_substring_"):
+                brands[brand_display(code[len("brand_substring_"):])] += 1
+            elif code == "display_name_brand_mismatch":
+                brands["Sender-name spoofing"] += 1
+        for mech in auth:
+            auth[mech][(getattr(r, mech + "_result", None) or "none").lower()] += 1
+
+    domain_query = db.session.query(ExtractedIndicator.value, func.count(func.distinct(ExtractedIndicator.submission_id))) \
+        .join(EmailSubmission).filter(ExtractedIndicator.kind == "domain", EmailSubmission.verdict.in_(FLAGGED_VERDICTS))
+    if not current_user.is_admin:
+        domain_query = domain_query.filter(EmailSubmission.user_id == current_user.id)
+    top_domains = domain_query.group_by(ExtractedIndicator.value).order_by(func.count(func.distinct(ExtractedIndicator.submission_id)).desc()).limit(8).all()
+
+    return render_template(
+        "detector/analytics.html", total=total, verdict_counts=verdict_counts, band_counts=band_counts,
+        histogram=histogram, trend=[{"label": d.strftime("%d %b"), **v} for d, v in days.items()],
+        top_indicators=indicators.most_common(8), top_domains=[(defang(d), n) for d, n in top_domains],
+        brands=brands.most_common(8),
+        auth_failures=[(m.upper(), auth[m]["fail"] + auth[m]["softfail"], sum(v for k, v in auth[m].items() if k != "none"))
+                       for m in auth],
+        capped=total >= 2000,
+    )
+
+
+def risk_key(score):
+    from ui_helpers import risk_band
+    return risk_band(score)["key"]
+
+
+@detector_bp.route("/settings")
+@login_required
+def settings():
+    from analysis.text_model import get_text_model
+    model = get_text_model()
+    meta = model.meta if model else {}
+    return render_template(
+        "detector/settings.html",
+        submission_count=EmailSubmission.query.filter_by(user_id=current_user.id).count(),
+        system={
+            "text_model": bool(model), "trained_on": meta.get("trained_on"), "n_train": meta.get("n_train"),
+            "virustotal": bool(current_app.config.get("VIRUSTOTAL_API_KEY")),
+            "resolver": bool(current_app.config.get("ENABLE_REDIRECT_RESOLVER")),
+            "blocklist": len(threat_intel.load_blocklist()),
+        },
+    )

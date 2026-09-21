@@ -1,39 +1,45 @@
 {% extends "base.html" %}
+{% from "_macros.html" import icon, tone_badge with context %}
 {% block title %}Users{% endblock %}
+{% block crumbs %}<nav class="crumbs" aria-label="Breadcrumb"><a href="{{ url_for('detector.dashboard') }}">Dashboard</a>{{ icon('i-chevron-right') }}<span>Administration</span>{{ icon('i-chevron-right') }}<span aria-current="page">Users</span></nav>{% endblock %}
 {% block content %}
-<h1>User management</h1>
-<div class="card">
-  <table>
-    <tr>
-      <th>ID</th><th>Username</th><th>Email</th><th>Role</th><th>2FA</th>
-      <th>Locked</th><th>Last login (UTC)</th><th>Action</th>
-    </tr>
-    {% for u in users %}
-    <tr>
-      <td>{{ u.id }}</td>
-      <td>{{ u.username }}{% if u.id == current_user.id %} <span class="mono">(you)</span>{% endif %}</td>
-      <td>{{ u.email }}</td>
-      <td>{{ u.role }}</td>
-      <td>{{ 'Yes' if u.totp_enabled else 'No' }}</td>
-      <td>{{ 'Yes' if u.locked_until and u.locked_until > now else 'No' }}</td>
-      <td>{{ u.last_login_at.strftime('%Y-%m-%d %H:%M:%S') if u.last_login_at else '-' }}</td>
-      <td>
-        {% if u.role == 'admin' %}
-          <form method="POST" action="{{ url_for('admin.change_user_role', user_id=u.id) }}" style="display:inline;">
-            <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
-            <input type="hidden" name="role" value="analyst">
-            <button class="button secondary" type="submit">Demote to analyst</button>
-          </form>
-        {% else %}
-          <form method="POST" action="{{ url_for('admin.change_user_role', user_id=u.id) }}" style="display:inline;">
-            <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
-            <input type="hidden" name="role" value="admin">
-            <button class="button" type="submit">Promote to admin</button>
-          </form>
-        {% endif %}
-      </td>
-    </tr>
-    {% endfor %}
-  </table>
-</div>
+<div class="page-header"><div><h1>User management</h1><p>Promote analysts to administrators or demote administrators. The last remaining administrator can never be demoted. Every change is written to the audit log.</p></div></div>
+
+<section class="card" aria-label="Users">
+  <div class="toolbar">
+    <div class="field field--grow"><label for="user-filter">Filter users</label>
+      <div class="input-group">{{ icon('i-search') }}<input id="user-filter" class="input" type="search" placeholder="Username, email or role" data-filter-input="#users-table" data-filter-count="#user-count"></div></div>
+    <span class="muted small" id="user-count" aria-live="polite">{{ users|length }} of {{ users|length }} shown</span>
+  </div>
+  <div class="table-wrap">
+    <table class="table table--stack" id="users-table">
+      <caption class="visually-hidden">Registered users</caption>
+      <thead><tr><th scope="col">User</th><th scope="col">Role</th><th scope="col">2FA</th><th scope="col">Status</th><th scope="col">Last sign-in</th><th scope="col"><span class="visually-hidden">Action</span></th></tr></thead>
+      <tbody>
+      {% for u in users %}
+        <tr>
+          <td data-label="User"><span class="row" style="flex-wrap:nowrap"><span class="avatar" style="width:32px;height:32px;font-size:.8rem" aria-hidden="true">{{ u.username|initials }}</span>
+            <span><span class="cell-main">{{ u.username }}{% if u.id == current_user.id %} <span class="muted small">(you)</span>{% endif %}</span><span class="cell-sub">{{ u.email }}</span></span></span></td>
+          <td data-label="Role">{{ tone_badge(u.role, 'critical' if u.role == 'admin' else 'info', 'i-key' if u.role == 'admin' else 'i-user') }}</td>
+          <td data-label="2FA">{% if u.totp_enabled %}{{ tone_badge('Enabled', 'success', 'i-check-circle') }}{% else %}{{ tone_badge('Not set up', 'warning', 'i-alert') }}{% endif %}</td>
+          <td data-label="Status">{% if u.locked_until and u.locked_until > now %}{{ tone_badge('Locked', 'danger', 'i-lock') }}{% else %}{{ tone_badge('Active', 'success', 'i-check') }}{% endif %}</td>
+          <td data-label="Last sign-in" class="nowrap">{{ u.last_login_at|dt }}</td>
+          <td data-label="Action" class="text-right">
+            <form class="inline-form" method="POST" action="{{ url_for('admin.change_user_role', user_id=u.id) }}">
+              <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+              {% if u.role == 'admin' %}
+              <input type="hidden" name="role" value="analyst">
+              <button class="btn btn--secondary btn--sm" type="submit" data-confirm="Demote {{ u.username }} to analyst? They will lose access to all administration pages." data-confirm-title="Demote administrator" data-confirm-ok="Demote">Demote to analyst</button>
+              {% else %}
+              <input type="hidden" name="role" value="admin">
+              <button class="btn btn--sm" type="submit" data-confirm="Promote {{ u.username }} to administrator? They will be able to manage users, view the audit log and see all analyses." data-confirm-title="Promote to administrator" data-confirm-ok="Promote">Promote to admin</button>
+              {% endif %}
+            </form>
+          </td>
+        </tr>
+      {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</section>
 {% endblock %}

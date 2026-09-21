@@ -1,13 +1,18 @@
-{% extends "base.html" %}
-{% block title %}Verify 2FA{% endblock %}
+{% extends "base_auth.html" %}
+{% from "_macros.html" import icon with context %}
+{% block title %}Verify your identity{% endblock %}
 {% block content %}
-<div class="card center-form">
-  <h2>Two-factor verification</h2>
-  <form method="POST" novalidate>
-    {{ form.hidden_tag() }}
-    <label>Authenticator code</label>
-    {{ form.token() }}
-    <button class="button" type="submit">Verify</button>
-  </form>
-</div>
+<h1>Two-factor verification</h1>
+<p>Enter the 6-digit code from your authenticator app to finish signing in.</p>
+<form method="POST" novalidate>
+  {{ form.hidden_tag() }}
+  <div class="field">
+    <label for="{{ form.token.id }}">6-digit code</label>
+    <div class="input-group">{{ icon('i-key') }}{{ form.token(class="input", inputmode="numeric", autocomplete="one-time-code", maxlength="6", placeholder="123456", autofocus=true) }}</div>
+    {% for err in form.token.errors %}<span class="field__error">{{ icon('i-x-circle') }}{{ err }}</span>{% endfor %}
+    <span class="field__hint">Codes refresh every 30 seconds.</span>
+  </div>
+  <button class="btn btn--lg btn--block" type="submit">Verify and continue</button>
+</form>
+<p class="mt-2 mb-0 muted"><a href="{{ url_for('auth.login') }}">Back to sign in</a></p>
 {% endblock %}

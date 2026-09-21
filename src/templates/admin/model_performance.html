@@ -1,86 +1,84 @@
 {% extends "base.html" %}
-{% block title %}Model performance{% endblock %}
+{% from "_macros.html" import icon, kpi, tone_badge with context %}
+{% block title %}Model Performance{% endblock %}
+{% block crumbs %}<nav class="crumbs" aria-label="Breadcrumb"><a href="{{ url_for('detector.dashboard') }}">Dashboard</a>{{ icon('i-chevron-right') }}<span>Administration</span>{{ icon('i-chevron-right') }}<span aria-current="page">Model Performance</span></nav>{% endblock %}
 {% block content %}
-<h1>Model &amp; tool performance</h1>
+<div class="page-header"><div><h1>Model &amp; tool performance</h1><p>Held-out evaluation of the machine-learning components, plus the status of the threat-intelligence tools.</p></div></div>
 
 {% if text_report %}
-<div class="card">
-  <h3>Text model — held-out evaluation</h3>
-  <p class="mono">Trained on: {{ text_report.provenance }} &nbsp;|&nbsp; {{ text_report.n_train }} train / {{ text_report.n_test }} test &nbsp;|&nbsp; phishing share {{ (text_report.phishing_share * 100)|round(1) }}%</p>
-  <div class="grid grid-4">
-    <div class="stat"><div class="num">{{ text_report.deployed.precision }}</div><div class="label">Precision</div></div>
-    <div class="stat"><div class="num">{{ text_report.deployed.recall }}</div><div class="label">Recall</div></div>
-    <div class="stat"><div class="num">{{ text_report.deployed.f1_score }}</div><div class="label">F1 score</div></div>
-    <div class="stat"><div class="num">{{ text_report.deployed.false_positive_rate }}</div><div class="label">False positive rate</div></div>
-  </div>
-  <table>
-    <tr><th></th><th>Predicted legitimate</th><th>Predicted phishing</th></tr>
-    <tr><td>Actual legitimate</td><td>{{ text_report.deployed.confusion_matrix.tn }} (TN)</td><td>{{ text_report.deployed.confusion_matrix.fp }} (FP)</td></tr>
-    <tr><td>Actual phishing</td><td>{{ text_report.deployed.confusion_matrix.fn }} (FN)</td><td>{{ text_report.deployed.confusion_matrix.tp }} (TP)</td></tr>
-  </table>
-  <p class="mono">{{ text_report.note }}</p>
-</div>
-
-<div class="card">
-  <h3>Classifier comparison (same data, same split)</h3>
-  <p class="mono">The deployed model is Logistic Regression because its predictions decompose exactly into per-word contributions. The other classifiers are benchmarks only.</p>
-  <table>
-    <tr><th>Model</th><th>Accuracy</th><th>Precision</th><th>Recall</th><th>F1</th><th>FPR</th><th>ROC-AUC</th><th>Train s</th></tr>
-    {% for m in text_report.comparison %}
-    <tr {% if m.deployed %}style="font-weight:600;"{% endif %}>
-      <td>{{ m.name }}</td><td>{{ m.accuracy }}</td><td>{{ m.precision }}</td><td>{{ m.recall }}</td>
-      <td>{{ m.f1_score }}</td><td>{{ m.false_positive_rate }}</td><td>{{ m.roc_auc }}</td><td>{{ m.train_seconds if m.train_seconds is not none else '—' }}</td>
-    </tr>
-    {% endfor %}
-  </table>
-</div>
-
-<div class="card">
-  <h3>What the text model learned (global explainability)</h3>
-  <div class="grid" style="grid-template-columns: 1fr 1fr;">
-    <div>
-      <label>Strongest phishing terms</label>
-      <table>{% for t in text_report.top_terms.phishing %}<tr><td>{{ t.term }}</td><td style="color:var(--danger)">+{{ t.coef }}</td></tr>{% endfor %}</table>
+{% set d = text_report.deployed %}
+<section class="card" aria-labelledby="m-text">
+  <div class="card__header"><h2 id="m-text">{{ icon('i-activity') }}Text model — held-out evaluation</h2><span class="muted small">{{ text_report.n_train }} train / {{ text_report.n_test }} test · phishing share {{ (text_report.phishing_share * 100)|round(1) }}%</span></div>
+  <div class="card__body stack">
+    <p class="muted small mb-0">Trained on: {{ text_report.provenance }}</p>
+    <div class="grid grid--4">
+      {{ kpi('Precision', d.precision, 'i-target', 'success', 'flagged emails that were phishing', 3) }}
+      {{ kpi('Recall', d.recall, 'i-search', 'info', 'phishing emails that were caught', 3) }}
+      {{ kpi('F1 score', d.f1_score, 'i-activity', 'info', 'balance of precision and recall', 3) }}
+      {{ kpi('False-positive rate', d.false_positive_rate, 'i-alert', 'warning', 'legitimate emails wrongly flagged', 3) }}
     </div>
-    <div>
-      <label>Strongest legitimate terms</label>
-      <table>{% for t in text_report.top_terms.legitimate %}<tr><td>{{ t.term }}</td><td style="color:var(--ok)">{{ t.coef }}</td></tr>{% endfor %}</table>
-    </div>
+    <div class="table-wrap"><table class="table"><caption class="visually-hidden">Confusion matrix</caption>
+      <thead><tr><th scope="col"></th><th scope="col">Predicted legitimate</th><th scope="col">Predicted phishing</th></tr></thead><tbody>
+        <tr><th scope="row">Actual legitimate</th><td>{{ tone_badge(d.confusion_matrix.tn ~ ' true negatives', 'success', 'i-check') }}</td><td>{{ tone_badge(d.confusion_matrix.fp ~ ' false positives', 'warning', 'i-alert') }}</td></tr>
+        <tr><th scope="row">Actual phishing</th><td>{{ tone_badge(d.confusion_matrix.fn ~ ' false negatives', 'danger', 'i-x-circle') }}</td><td>{{ tone_badge(d.confusion_matrix.tp ~ ' true positives', 'success', 'i-check') }}</td></tr>
+      </tbody></table></div>
+    <div class="alert tone-info">{{ icon('i-info') }}<div class="small">{{ text_report.note }}</div></div>
   </div>
-</div>
+</section>
+
+<section class="card mt-3" aria-labelledby="m-cmp">
+  <div class="card__header"><h2 id="m-cmp">{{ icon('i-chart') }}Classifier comparison</h2><span class="muted small">Same data, same split</span></div>
+  <div class="card__body">
+    <p class="muted small">Logistic Regression is deployed because its predictions break down exactly into per-word contributions. The others are benchmarks only.</p>
+    <div class="table-wrap"><table class="table"><caption class="visually-hidden">Classifier comparison</caption>
+      <thead><tr><th scope="col">Model</th><th scope="col" class="num">Accuracy</th><th scope="col" class="num">Precision</th><th scope="col" class="num">Recall</th><th scope="col" class="num">F1</th><th scope="col" class="num">FPR</th><th scope="col" class="num">ROC-AUC</th><th scope="col" class="num">Train (s)</th></tr></thead><tbody>
+      {% for m in text_report.comparison %}
+        <tr><td><strong>{{ m.name }}</strong>{% if m.deployed %} {{ tone_badge('Deployed', 'success', 'i-check') }}{% endif %}</td>
+          <td class="num">{{ m.accuracy }}</td><td class="num">{{ m.precision }}</td><td class="num">{{ m.recall }}</td><td class="num">{{ m.f1_score }}</td><td class="num">{{ m.false_positive_rate }}</td><td class="num">{{ m.roc_auc }}</td><td class="num">{{ m.train_seconds if m.train_seconds is not none else '—' }}</td></tr>
+      {% endfor %}
+    </tbody></table></div>
+  </div>
+</section>
+
+<section class="card mt-3" aria-labelledby="m-terms">
+  <div class="card__header"><h2 id="m-terms">{{ icon('i-list') }}What the text model learned</h2><span class="muted small">Global explainability</span></div>
+  <div class="card__body"><div class="grid grid--2">
+    <div><h3>Strongest phishing terms</h3><div class="row" style="gap:6px">{% for t in text_report.top_terms.phishing %}<span class="chip chip--warn" title="weight +{{ t.coef }}">{{ t.term }} <strong>+{{ t.coef }}</strong></span>{% endfor %}</div></div>
+    <div><h3>Strongest legitimate terms</h3><div class="row" style="gap:6px">{% for t in text_report.top_terms.legitimate %}<span class="chip" title="weight {{ t.coef }}">{{ t.term }} <strong>{{ t.coef }}</strong></span>{% endfor %}</div></div>
+  </div></div>
+</section>
 {% else %}
-<div class="card"><p class="mono">No text-model report found — run <code>python train_model.py</code> first.</p></div>
+<div class="alert tone-warning mb-2">{{ icon('i-alert') }}<div>No text-model report found. Run <code>python train_model.py</code> first.</div></div>
 {% endif %}
 
 {% if eval_report %}
-<div class="card">
-  <h3>Structured-feature model (synthetic data — proof of pipeline)</h3>
-  <div class="grid grid-4">
-    <div class="stat"><div class="num">{{ eval_report.precision }}</div><div class="label">Precision</div></div>
-    <div class="stat"><div class="num">{{ eval_report.recall }}</div><div class="label">Recall</div></div>
-    <div class="stat"><div class="num">{{ eval_report.f1_score }}</div><div class="label">F1 score</div></div>
-    <div class="stat"><div class="num">{{ eval_report.false_positive_rate }}</div><div class="label">False positive rate</div></div>
+<section class="card mt-3" aria-labelledby="m-struct">
+  <div class="card__header"><h2 id="m-struct">{{ icon('i-sliders') }}Structured-feature model</h2>{{ tone_badge('Synthetic data', 'warning', 'i-info') }}</div>
+  <div class="card__body stack">
+    <div class="grid grid--4">
+      {{ kpi('Precision', eval_report.precision, 'i-target', 'info', '', 3) }}{{ kpi('Recall', eval_report.recall, 'i-search', 'info', '', 3) }}
+      {{ kpi('F1 score', eval_report.f1_score, 'i-activity', 'info', '', 3) }}{{ kpi('False-positive rate', eval_report.false_positive_rate, 'i-alert', 'info', '', 3) }}
+    </div>
+    <p class="muted small mb-0">{{ eval_report.note }}</p>
   </div>
-  <p class="mono">{{ eval_report.note }}</p>
-</div>
+</section>
 {% endif %}
 
-<div class="card">
-  <h3>Analyst feedback loop</h3>
-  <div class="grid grid-4">
-    <div class="stat"><div class="num">{{ total_scored }}</div><div class="label">Total scored</div></div>
-    <div class="stat"><div class="num" style="color:var(--danger)">{{ confirmed_count }}</div><div class="label">Confirmed phishing</div></div>
-    <div class="stat"><div class="num" style="color:var(--warn)">{{ fp_count }}</div><div class="label">False positives reported</div></div>
-  </div>
-</div>
-
-<div class="card">
-  <h3>Threat-intelligence tools</h3>
-  <table>
-    <tr><th>Tool</th><th>Status</th></tr>
-    <tr><td>Offline domain blocklist</td><td>{{ tools.blocklist_entries }} domain(s) loaded</td></tr>
-    <tr><td>VirusTotal reputation lookup</td><td>{{ 'enabled' if tools.virustotal else 'disabled (no API key)' }}</td></tr>
-    <tr><td>Redirect-chain resolver</td><td>{{ 'enabled' if tools.redirect_resolver else 'disabled' }}</td></tr>
-  </table>
+<div class="grid grid--2 mt-3">
+  <section class="card" aria-labelledby="m-loop">
+    <div class="card__header"><h2 id="m-loop">{{ icon('i-flag') }}Analyst feedback loop</h2></div>
+    <div class="card__body"><div class="grid grid--3">
+      {{ kpi('Total scored', total_scored, 'i-mail', 'info') }}{{ kpi('Confirmed phishing', confirmed_count, 'i-alert-octagon', 'danger') }}{{ kpi('False positives', fp_count, 'i-check-circle', 'warning') }}
+    </div></div>
+  </section>
+  <section class="card" aria-labelledby="m-tools">
+    <div class="card__header"><h2 id="m-tools">{{ icon('i-globe') }}Threat-intelligence tools</h2></div>
+    <div class="card__body--flush"><div class="table-wrap"><table class="table"><caption class="visually-hidden">Tool status</caption>
+      <thead><tr><th scope="col">Tool</th><th scope="col">Status</th></tr></thead><tbody>
+      <tr><td>Offline domain blocklist</td><td>{{ tone_badge(tools.blocklist_entries ~ ' domain(s) loaded', 'success' if tools.blocklist_entries else 'neutral') }}</td></tr>
+      <tr><td>VirusTotal reputation lookup</td><td>{{ tone_badge('enabled' if tools.virustotal else 'disabled (no API key)', 'success' if tools.virustotal else 'neutral') }}</td></tr>
+      <tr><td>Redirect-chain resolver</td><td>{{ tone_badge('enabled' if tools.redirect_resolver else 'disabled', 'success' if tools.redirect_resolver else 'neutral') }}</td></tr>
+    </tbody></table></div></div>
+  </section>
 </div>
 {% endblock %}

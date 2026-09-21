@@ -1,2 +1,12 @@
 {% extends "base.html" %}
-{% block content %}<div class="card"><h2>403 — Forbidden</h2><p>Your role does not have access to this resource. This event has been recorded in the audit log.</p>{% if reference %}<p class="mono">Reference: {{ reference }}</p>{% endif %}</div>{% endblock %}
+{% from "_macros.html" import icon with context %}
+{% block title %}Access denied{% endblock %}
+{% block content %}
+<div class="card"><div class="empty">
+  <div class="empty__icon tone-danger" style="background:var(--danger-soft);color:var(--danger)">{{ icon('i-lock') }}</div>
+  <h2>403 — Access denied</h2>
+  <p>Your role does not have access to this resource. This event has been recorded in the audit log.</p>
+  {% if reference %}<p class="mono">Reference: {{ reference }}</p>{% endif %}
+  <a class="btn" href="{{ url_for('detector.dashboard') if current_user.is_authenticated else url_for('auth.login') }}">Back to dashboard</a>
+</div></div>
+{% endblock %}

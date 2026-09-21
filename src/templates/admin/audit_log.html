@@ -1,27 +1,41 @@
 {% extends "base.html" %}
-{% block title %}Audit log{% endblock %}
+{% from "_macros.html" import icon, tone_badge with context %}
+{% block title %}Audit Log{% endblock %}
+{% block crumbs %}<nav class="crumbs" aria-label="Breadcrumb"><a href="{{ url_for('detector.dashboard') }}">Dashboard</a>{{ icon('i-chevron-right') }}<span>Administration</span>{{ icon('i-chevron-right') }}<span aria-current="page">Audit Log</span></nav>{% endblock %}
 {% block content %}
-<h1>Tamper-evident audit log</h1>
-<div class="card">
-  {% if is_valid %}
-    <p><span class="badge badge-legitimate">Chain intact</span> — every hash matches its predecessor; no historical entry has been altered.</p>
-  {% else %}
-    <p><span class="badge badge-phishing">CHAIN BROKEN at entry #{{ broken_id }}</span> — historical tampering detected. Investigate immediately.</p>
-  {% endif %}
-</div>
-<div class="card">
-  <table>
-    <tr><th>ID</th><th>Time (UTC)</th><th>User</th><th>Event</th><th>IP</th><th>Detail</th></tr>
-    {% for e in entries %}
-    <tr>
-      <td>{{ e.id }}</td>
-      <td>{{ e.timestamp.strftime('%Y-%m-%d %H:%M:%S') }}</td>
-      <td>{{ e.username or '-' }}</td>
-      <td>{{ e.event_type }}</td>
-      <td>{{ e.ip_address or '-' }}</td>
-      <td class="mono">{{ e.detail }}</td>
-    </tr>
-    {% endfor %}
-  </table>
-</div>
+<div class="page-header"><div><h1>Tamper-evident audit log</h1><p>Every sign-in, access decision, ingestion gate and analyst action, chained by hash so any later change is detectable.</p></div></div>
+
+{% if is_valid %}
+<div class="alert tone-success mb-2">{{ icon('i-shield-check', 'icon--lg') }}<div><strong>Chain intact</strong><div class="small muted">Every hash matches its predecessor; no historical entry has been altered.</div></div></div>
+{% else %}
+<div class="alert tone-critical mb-2" role="alert">{{ icon('i-flame', 'icon--lg') }}<div><strong>CHAIN BROKEN at entry #{{ broken_id }}</strong><div class="small">Historical tampering detected. Investigate immediately.</div></div></div>
+{% endif %}
+
+<section class="card" aria-label="Audit entries">
+  <div class="toolbar">
+    <div class="field field--grow"><label for="audit-filter">Filter entries</label>
+      <div class="input-group">{{ icon('i-search') }}<input id="audit-filter" class="input" type="search" placeholder="User, event, IP or detail" data-filter-input="#audit-table" data-filter-count="#audit-count"></div></div>
+    <span class="muted small" id="audit-count" aria-live="polite">{{ entries|length }} of {{ entries|length }} shown</span>
+  </div>
+  <div class="table-wrap">
+    <table class="table table--stack" id="audit-table">
+      <caption class="visually-hidden">Most recent {{ entries|length }} audit entries</caption>
+      <thead><tr><th scope="col">ID</th><th scope="col">Time (UTC)</th><th scope="col">User</th><th scope="col">Event</th><th scope="col">IP</th><th scope="col">Detail</th></tr></thead>
+      <tbody>
+      {% for e in entries %}
+        <tr>
+          <td data-label="ID" class="mono">{{ e.id }}</td>
+          <td data-label="Time" class="nowrap">{{ e.timestamp|dt }}</td>
+          <td data-label="User">{{ e.username or '—' }}</td>
+          <td data-label="Event"><span class="badge tone-{{ e.event_type|event_tone }}">{{ e.event_type|replace('_', ' ') }}</span></td>
+          <td data-label="IP" class="mono">{{ e.ip_address or '—' }}</td>
+          <td data-label="Detail"><span class="mono">{{ e.detail }}</span></td>
+        </tr>
+      {% else %}
+        <tr><td colspan="6" class="muted">No audit entries yet.</td></tr>
+      {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</section>
 {% endblock %}

@@ -1,2 +1,12 @@
 {% extends "base.html" %}
-{% block content %}<div class="card"><h2>404 — Not found</h2><p>That page does not exist.</p>{% if reference %}<p class="mono">Reference: {{ reference }}</p>{% endif %}</div>{% endblock %}
+{% from "_macros.html" import icon with context %}
+{% block title %}Page not found{% endblock %}
+{% block content %}
+<div class="card"><div class="empty">
+  <div class="empty__icon">{{ icon('i-search') }}</div>
+  <h2>404 — Page not found</h2>
+  <p>That page does not exist or may have moved.</p>
+  {% if reference %}<p class="mono">Reference: {{ reference }}</p>{% endif %}
+  <a class="btn" href="{{ url_for('detector.dashboard') if current_user.is_authenticated else url_for('auth.login') }}">Back to safety</a>
+</div></div>
+{% endblock %}

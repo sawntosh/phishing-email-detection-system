@@ -1,22 +1,20 @@
-{% extends "base.html" %}
-{% block title %}Register{% endblock %}
+{% extends "base_auth.html" %}
+{% from "_macros.html" import icon with context %}
+{% block title %}Create account{% endblock %}
 {% block content %}
-<div class="card center-form">
-  <h2>Create account</h2>
-  <form method="POST" novalidate>
-    {{ form.hidden_tag() }}
-    <label>Username</label>
-    {{ form.username() }}
-    <label>Email</label>
-    {{ form.email() }}
-    <label>Password</label>
-    {{ form.password() }}
-    <label>Confirm password</label>
-    {{ form.confirm_password() }}
-    <button class="button" type="submit">Register</button>
-  </form>
-  {% for field in [form.username, form.email, form.password, form.confirm_password] %}
-    {% for err in field.errors %}<div class="flash flash-danger">{{ err }}</div>{% endfor %}
+<h1>Create your account</h1>
+<p>New accounts start as analysts. You will set up two-factor authentication after signing in.</p>
+<form method="POST" novalidate>
+  {{ form.hidden_tag() }}
+  {% for field, ico, auto in [(form.username, 'i-user', 'username'), (form.email, 'i-mail', 'email'), (form.password, 'i-lock', 'new-password'), (form.confirm_password, 'i-lock', 'new-password')] %}
+  <div class="field">
+    {{ field.label }}
+    <div class="input-group">{{ icon(ico) }}{{ field(class="input", autocomplete=auto) }}</div>
+    {% if field.name == 'password' %}<span class="field__hint">At least 10 characters with upper case, lower case and a digit.</span>{% endif %}
+    {% for err in field.errors %}<span class="field__error">{{ icon('i-x-circle') }}{{ err }}</span>{% endfor %}
+  </div>
   {% endfor %}
-</div>
+  <button class="btn btn--lg btn--block" type="submit">Create account</button>
+</form>
+<p class="mt-2 mb-0 muted">Already registered? <a href="{{ url_for('auth.login') }}">Sign in</a></p>
 {% endblock %}

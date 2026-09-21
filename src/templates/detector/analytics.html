@@ -1,0 +1,62 @@
+{% extends "base.html" %}
+{% from "_macros.html" import icon, empty_state, donut, hbars, trend_chart with context %}
+{% block title %}Analytics{% endblock %}
+{% block crumbs %}<nav class="crumbs" aria-label="Breadcrumb"><a href="{{ url_for('detector.dashboard') }}">Dashboard</a>{{ icon('i-chevron-right') }}<span aria-current="page">Analytics</span></nav>{% endblock %}
+{% block content %}
+<div class="page-header">
+  <div><h1>Threat analytics</h1><p>Patterns across {{ total }} analysed email{{ '' if total == 1 else 's' }}{% if capped %} (the most recent 2,000){% endif %}. All figures come from stored analyses.</p></div>
+  <div class="page-actions"><a class="btn btn--secondary" href="{{ url_for('detector.history') }}">{{ icon('i-clock') }}View history</a></div>
+</div>
+
+{% if total == 0 %}
+<div class="card">{{ empty_state('i-chart', 'Nothing to analyse yet', 'Analytics appear after your first email is analysed.', 'Analyze Email', url_for('detector.upload')) }}</div>
+{% else %}
+<div class="grid grid--2">
+  <section class="card" aria-labelledby="a-dist">
+    <div class="card__header"><h2 id="a-dist">{{ icon('i-shield') }}Phishing vs safe</h2></div>
+    <div class="card__body card__body--center">{{ donut([('Phishing', verdict_counts.get('phishing', 0), 'danger'), ('Suspicious', verdict_counts.get('suspicious', 0), 'warning'), ('Safe', verdict_counts.get('legitimate', 0), 'success')], total, 'emails') }}</div>
+  </section>
+  <section class="card" aria-labelledby="a-risk">
+    <div class="card__header"><h2 id="a-risk">{{ icon('i-target') }}Risk-score distribution</h2><span class="muted small">Emails per 10-point range</span></div>
+    <div class="card__body">
+      {% set rows = [] %}{% for n in histogram %}{% set _ = rows.append((((loop.index0 * 10) ~ '–' ~ (100 if loop.last else (loop.index0 * 10 + 9))), n)) %}{% endfor %}
+      {{ hbars(rows, 'info') }}
+      <div class="row mt-2" style="gap:8px">
+        {% for b in RISK_BANDS %}<span class="badge tone-{{ b.tone }}">{{ icon(b.icon) }}{{ b.label }} {{ b.lo }}–{{ b.hi }}: {{ band_counts.get(b.key, 0) }}</span>{% endfor %}
+      </div>
+    </div>
+  </section>
+</div>
+
+<section class="card mt-3" aria-labelledby="a-trend">
+  <div class="card__header"><h2 id="a-trend">{{ icon('i-activity') }}Detection trend · last 30 days</h2>
+    <span class="row small muted" style="gap:14px"><span><span class="dot" style="background:var(--primary);opacity:.6"></span> Analysed</span><span><span class="dot" style="background:var(--danger)"></span> Flagged</span></span></div>
+  <div class="card__body">{{ trend_chart(trend, 170) }}</div>
+</section>
+
+<div class="grid grid--2 mt-3">
+  <section class="card" aria-labelledby="a-ind">
+    <div class="card__header"><h2 id="a-ind">{{ icon('i-list') }}Most common indicators</h2></div>
+    <div class="card__body">{{ hbars(top_indicators, 'warning', 'No indicators have been triggered yet.') }}</div>
+  </section>
+  <section class="card" aria-labelledby="a-dom">
+    <div class="card__header"><h2 id="a-dom">{{ icon('i-globe') }}Suspicious domains</h2><span class="muted small">Domains in flagged emails</span></div>
+    <div class="card__body">{{ hbars(top_domains, 'danger', 'No domains were found in flagged emails.') }}</div>
+  </section>
+  <section class="card" aria-labelledby="a-auth">
+    <div class="card__header"><h2 id="a-auth">{{ icon('i-key') }}Authentication failures</h2></div>
+    <div class="card__body">
+      {% for name, failed, evaluated in auth_failures %}
+      <div class="hbar__top {{ 'mt-1' if not loop.first }}"><span class="hbar__label">{{ name }}</span><span class="hbar__val">{{ failed }} failed of {{ evaluated }} evaluated</span></div>
+      <div class="progress tone-{{ 'danger' if failed else 'success' }}"><span style="--w: {{ (100.0 * failed / evaluated)|round(1) if evaluated else 0 }}%"></span></div>
+      {% endfor %}
+      <p class="muted small mt-2 mb-0">Only emails that carry an <code>Authentication-Results</code> header are counted as evaluated.</p>
+    </div>
+  </section>
+  <section class="card" aria-labelledby="a-brand">
+    <div class="card__header"><h2 id="a-brand">{{ icon('i-mail-warn') }}Brand impersonation attempts</h2></div>
+    <div class="card__body">{{ hbars(brands, 'critical', 'No brand impersonation has been detected.') }}</div>
+  </section>
+</div>
+{% endif %}
+{% endblock %}

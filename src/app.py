@@ -11,6 +11,7 @@ from config import BASE_DIR, Config
 from error_handlers import register_error_handlers
 from logging_config import configure_logging, register_request_logging
 from models import db, User
+from ui_helpers import register_ui
 
 csrf = CSRFProtect()
 login_manager = LoginManager()
@@ -28,6 +29,7 @@ def create_app(config_class=Config):
     configure_logging(app)
     register_request_logging(app)
     register_error_handlers(app)
+    register_ui(app)
 
     db.init_app(app)
     csrf.init_app(app)

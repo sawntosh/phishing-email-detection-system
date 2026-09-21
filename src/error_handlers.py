@@ -17,7 +17,7 @@ _MESSAGES = {
     405: ("Method not allowed", "That action is not supported for this page."),
     413: ("Upload too large", "The message or file you submitted is larger than the 5 MB limit."),
     429: ("Too many requests", "You have made too many requests in a short time. Please wait a while and try again."),
-    500: ("Something went wrong", "An unexpected error occurred. It has been logged; please try again."),
+    500: ("Something went wrong", "We could not complete that request. It has been logged. If you were submitting an email, check the file format and try again."),
 }
 
 

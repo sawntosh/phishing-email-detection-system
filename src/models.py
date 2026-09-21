@@ -107,6 +107,9 @@ class EmailSubmission(db.Model):
     sender_display_name = db.Column(db.String(255))
     subject = db.Column(db.Text)
     received_headers_summary = db.Column(db.Text)
+    # Header values kept as evidence for the result page (added after the first release; nullable)
+    reply_to = db.Column(db.String(320))
+    return_path = db.Column(db.String(320))
 
     spf_result = db.Column(db.String(20))
     dkim_result = db.Column(db.String(20))

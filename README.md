@@ -89,6 +89,18 @@ Try it immediately with the two sample emails in `sample_emails/`
 (`phishing_paypal.eml` scores ~98/100 and is auto-quarantined;
 `legitimate_meeting.eml` scores <5/100 and is not).
 
+## User interface
+
+A self-hosted, dependency-free design system (no CDN: the CSP allows only `'self'` scripts and styles).
+
+- **Layout:** sidebar navigation (collapses to a drawer on tablets and phones), top bar with breadcrumb, theme toggle, user and role badge, and toast notifications. Login, registration and 2FA use a split-screen layout.
+- **Pages:** Dashboard, Analyze Email (paste or drag-and-drop, client-side validation, upload progress and analysis-stages overlay), Analysis Result (verdict gauge, five summary cards, expandable evidence cards, recommended action, seven detail tabs), History (search, filter, sort, pagination), Analytics, Review Queue, Settings, and the admin Users, Audit Log and Model Performance pages.
+- **Theming:** dark and light themes from one set of design tokens in `src/static/css/app.css`; status colour is defined once (`tone-success|warning|danger|critical|info`) and every component reads it. The choice is remembered in the browser.
+- **Risk scale:** LOW 0-29, MEDIUM 30-59, HIGH 60-79, CRITICAL 80-100 (`src/ui_helpers.py`), always shown with an icon and text, never by colour alone.
+- **Accessibility:** skip link, landmarks, `aria-current`, labelled controls, visible focus, keyboard-operable tabs and dialogs, `prefers-reduced-motion` honoured.
+- **Progressive enhancement:** every page works without JavaScript; scripts in `src/static/js/` add the theme toggle, tabs, dialogs and the upload experience. No inline scripts or handlers.
+- **Real data only:** nothing on the dashboard is placeholder content; every figure is computed from stored analyses. Where the backend does not provide something yet (deleting history, editable detection rules, `.msg` files, notifications) the UI omits it and says so.
+
 ## Running tests
 
 ```bash
@@ -96,7 +108,7 @@ cd src
 pytest ../tests -v --cov=. --cov-report=term-missing
 ```
 
-187 tests. Covers: RBAC/2FA/lockout, every Zero-Trust gate
+254 tests. Covers: RBAC/2FA/lockout, every Zero-Trust gate
 individually (including attachment-containment and HTML-sanitisation
 properties), rule-based analysis modules, the hybrid risk engine, the
 tamper-evident audit log (including a test that verifies **tampering is
@@ -105,7 +117,7 @@ score → quarantine → export flows with cross-user access-control checks, plu
 blocklist matching, VirusTotal response handling and input validation (no request is ever sent for a malformed
 domain/hash), SSRF guards of the redirect resolver (private/loopback/metadata addresses, DNS rebinding, ports, schemes,
 hop cap), pure-Python text-model inference matching scikit-learn exactly, the false-positive review workflow, CSV
-formula-injection and PDF-markup safety, pasted-message analysis (header-injection safe, same Zero-Trust gates as uploads), and automatic database column migration.
+formula-injection and PDF-markup safety, pasted-message analysis (header-injection safe, same Zero-Trust gates as uploads), automatic database column migration, and the interface (history search/filter/pagination with hostile parameters, XSS escaping on every page, accessibility landmarks, CSP-clean assets, evidence cards built from stored data).
 
 ## Running the security tools locally (mirrors `ci-cd/pipeline.yml`)
 

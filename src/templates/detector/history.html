@@ -1,0 +1,52 @@
+{% extends "base.html" %}
+{% from "_macros.html" import icon, empty_state, submission_table, pagination with context %}
+{% block title %}Analysis History{% endblock %}
+{% block crumbs %}<nav class="crumbs" aria-label="Breadcrumb"><a href="{{ url_for('detector.dashboard') }}">Dashboard</a>{{ icon('i-chevron-right') }}<span aria-current="page">History</span></nav>{% endblock %}
+{% block content %}
+<div class="page-header">
+  <div><h1>Analysis history</h1><p>Every email analysed{% if not current_user.is_admin %} by you{% endif %}. Search, filter and open any result.</p></div>
+  <div class="page-actions">
+    {% if has_any %}
+    <a class="btn btn--secondary" href="{{ url_for('detector.export_all', fmt='csv') }}">{{ icon('i-download') }}Export CSV</a>
+    <a class="btn btn--secondary" href="{{ url_for('detector.export_all', fmt='json') }}">{{ icon('i-database') }}Export JSON</a>
+    {% endif %}
+    <a class="btn" href="{{ url_for('detector.upload') }}">{{ icon('i-mail-search') }}Analyze Email</a>
+  </div>
+</div>
+
+{% if not has_any %}
+<div class="card">{{ empty_state('i-inbox', 'No email analyses yet', 'Submit your first email to begin detecting phishing threats.', 'Analyze Email', url_for('detector.upload')) }}</div>
+{% else %}
+<div class="card">
+  <form class="toolbar" method="GET" action="{{ url_for('detector.history') }}" role="search" aria-label="Filter analysis history">
+    <div class="field field--grow"><label for="q">Search</label>
+      <div class="input-group">{{ icon('i-search') }}<input id="q" class="input" type="search" name="q" value="{{ term }}" maxlength="100" placeholder="Subject, sender or filename"></div></div>
+    <div class="field"><label for="verdict">Classification</label>
+      <select id="verdict" class="select" name="verdict">
+        <option value="all" {{ 'selected' if verdict == 'all' }}>All</option>
+        <option value="legitimate" {{ 'selected' if verdict == 'legitimate' }}>Safe</option>
+        <option value="suspicious" {{ 'selected' if verdict == 'suspicious' }}>Suspicious</option>
+        <option value="phishing" {{ 'selected' if verdict == 'phishing' }}>Phishing</option>
+      </select></div>
+    <div class="field"><label for="status">Status</label>
+      <select id="status" class="select" name="status">
+        {% for value, label in [('all', 'All'), ('pending', 'Awaiting review'), ('quarantined', 'Quarantined'), ('released', 'Released'), ('confirmed_phish', 'Confirmed phishing'), ('false_positive', 'False positive')] %}
+        <option value="{{ value }}" {{ 'selected' if status == value }}>{{ label }}</option>{% endfor %}
+      </select></div>
+    <div class="field"><label for="sort">Sort by</label>
+      <select id="sort" class="select" name="sort">
+        {% for value, label in [('newest', 'Newest first'), ('oldest', 'Oldest first'), ('score_desc', 'Highest risk'), ('score_asc', 'Lowest risk')] %}
+        <option value="{{ value }}" {{ 'selected' if sort == value }}>{{ label }}</option>{% endfor %}
+      </select></div>
+    <div class="row"><button class="btn" type="submit">{{ icon('i-filter') }}Apply</button>{% if args %}<a class="btn btn--ghost" href="{{ url_for('detector.history') }}">Reset</a>{% endif %}</div>
+  </form>
+
+  {% if items %}
+  <div class="card__body--flush">{{ submission_table(items) }}</div>
+  {{ pagination(page, pages, total, 'detector.history', args) }}
+  {% else %}
+  {{ empty_state('i-search', 'No matching analyses', 'Nothing matches those filters. Try a different search term or reset the filters.', 'Reset filters', url_for('detector.history')) }}
+  {% endif %}
+</div>
+{% endif %}
+{% endblock %}

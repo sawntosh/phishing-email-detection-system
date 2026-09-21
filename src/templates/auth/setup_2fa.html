@@ -1,18 +1,18 @@
-{% extends "base.html" %}
+{% extends "base_auth.html" %}
+{% from "_macros.html" import icon with context %}
 {% block title %}Set up 2FA{% endblock %}
 {% block content %}
-<div class="card center-form">
-  <h2>Set up two-factor authentication</h2>
-  <p class="mono">Scan this QR code with Google Authenticator / Authy, or enter the secret manually.</p>
-  <div style="background:white; padding:16px; border-radius:8px; display:inline-block;">
-    <img alt="TOTP QR code" src="data:image/svg+xml;base64,{{ qr_svg_b64 }}" width="200" height="200">
+<h1>Set up two-factor authentication</h1>
+<p>Scan this QR code with Google Authenticator, Authy or a similar app, or enter the key manually.</p>
+<div class="text-center mb-2"><div class="qr"><img alt="QR code for your authenticator app" src="data:image/svg+xml;base64,{{ qr_svg_b64 }}" width="200" height="200"></div></div>
+<div class="alert tone-info mb-2">{{ icon('i-key') }}<div><span class="small muted">Manual entry key</span><br><code>{{ secret }}</code></div></div>
+<form method="POST" action="{{ url_for('auth.confirm_2fa_setup') }}" novalidate>
+  {{ form.hidden_tag() }}
+  <div class="field">
+    <label for="{{ form.token.id }}">Enter the 6-digit code to confirm</label>
+    {{ form.token(class="input", inputmode="numeric", autocomplete="one-time-code", maxlength="6", placeholder="123456", autofocus=true) }}
+    {% for err in form.token.errors %}<span class="field__error">{{ icon('i-x-circle') }}{{ err }}</span>{% endfor %}
   </div>
-  <p class="mono">Manual entry key: <b>{{ secret }}</b></p>
-  <form method="POST" action="{{ url_for('auth.confirm_2fa_setup') }}">
-    {{ form.hidden_tag() }}
-    <label>Enter the 6-digit code to confirm</label>
-    {{ form.token() }}
-    <button class="button" type="submit">Confirm & activate</button>
-  </form>
-</div>
+  <button class="btn btn--lg btn--block" type="submit">{{ icon('i-check') }}Confirm &amp; activate</button>
+</form>
 {% endblock %}

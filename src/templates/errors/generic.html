@@ -1,10 +1,15 @@
 {% extends "base.html" %}
-{% block title %}{{ code }} — {{ title }}{% endblock %}
+{% from "_macros.html" import icon with context %}
+{% block title %}{{ title }}{% endblock %}
 {% block content %}
-<div class="card">
-  <h2>{{ code }} — {{ title }}</h2>
+<div class="card"><div class="empty">
+  <div class="empty__icon" style="background:var(--warning-soft);color:var(--warning)">{{ icon('i-alert') }}</div>
+  <h2>{{ title }}</h2>
   <p>{{ message }}</p>
   {% if reference %}<p class="mono">Error reference: {{ reference }} (quote this if you contact an administrator)</p>{% endif %}
-  <p><a class="button secondary" href="{{ url_for('detector.dashboard') if current_user.is_authenticated else url_for('auth.login') }}">Back to safety</a></p>
-</div>
+  <div class="row" style="justify-content:center">
+    {% if request.method == 'GET' or request.path == url_for('detector.upload') %}<a class="btn" href="{{ request.path }}">{{ icon('i-refresh') }}Try again</a>{% endif %}
+    <a class="btn btn--secondary" href="{{ url_for('detector.dashboard') if current_user.is_authenticated else url_for('auth.login') }}">{{ 'Back to dashboard' if current_user.is_authenticated else 'Back to sign in' }}</a>
+  </div>
+</div></div>
 {% endblock %}

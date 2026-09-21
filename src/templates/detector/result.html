@@ -1,167 +1,332 @@
 {% extends "base.html" %}
-{% block title %}Result #{{ s.id }}{% endblock %}
+{% from "_macros.html" import icon, ring, verdict_badge, band_badge, severity_badge, tone_badge, status_badge, empty_state with context %}
+{% set v = view.verdict %}{% set band = view.band %}
+{% block title %}Analysis #{{ s.id }}{% endblock %}
+{% block crumbs %}<nav class="crumbs" aria-label="Breadcrumb"><a href="{{ url_for('detector.dashboard') }}">Dashboard</a>{{ icon('i-chevron-right') }}<a href="{{ url_for('detector.history') }}">History</a>{{ icon('i-chevron-right') }}<span aria-current="page">Analysis #{{ s.id }}</span></nav>{% endblock %}
+
 {% block content %}
-<h1>Submission #{{ s.id }}</h1>
-
-<div class="card">
-  <div style="display:flex; justify-content:space-between; align-items:center;">
-    <h2 style="margin:0;">{{ s.subject or '(no subject)' }}</h2>
-    <span class="badge badge-{{ s.verdict }}">{{ s.verdict|upper }}</span>
+<div class="page-header">
+  <div>
+    <h1 style="word-break:break-word">{{ s.subject or '(no subject)' }}</h1>
+    <p class="mono" style="max-width:none">From: {{ s.sender or 'not recorded' }} · {{ s.created_at|dt }}</p>
   </div>
-  <p class="mono">From: {{ s.sender }} &nbsp;|&nbsp; File: {{ s.original_filename }} &nbsp;|&nbsp; SHA-256: {{ s.sha256_hash }}</p>
-
-  <label>Risk score: {{ s.risk_score }} / 100</label>
-  <div class="score-bar"><div style="width:{{ s.risk_score }}%; background: {{ 'var(--danger)' if s.risk_score >= 60 else ('var(--warn)' if s.risk_score >= 30 else 'var(--ok)') }};"></div></div>
-
-  <table>
-    <tr><th>SPF</th><th>DKIM</th><th>DMARC</th></tr>
-    <tr><td>{{ s.spf_result }}</td><td>{{ s.dkim_result }}</td><td>{{ s.dmarc_result }}</td></tr>
-  </table>
-
-  <h3 style="margin-bottom:0;">How the score was built</h3>
-  <p class="mono">final score = 50% rule-based score + 50% machine-learning probability</p>
-  <table>
-    <tr><th>Component</th><th>Value</th><th>What it measures</th></tr>
-    <tr><td>Rule-based score</td><td>{{ s.rule_score if s.rule_score is not none else 'n/a' }} / 100</td><td>URL, header/sender and content checks</td></tr>
-    <tr><td>Text model (real corpus)</td><td>{{ s.text_probability if s.text_probability is not none else 'not trained' }}</td><td>Wording learned from real phishing vs. legitimate mail</td></tr>
-    <tr><td>Structured model</td><td>{{ s.structured_probability if s.structured_probability is not none else 'n/a' }}</td><td>URL / header / content feature vector</td></tr>
-    <tr><td>Blended ML probability</td><td>{{ s.ml_probability }}</td><td>65% text model + 35% structured model</td></tr>
-  </table>
-
-  <p style="margin-top:14px;">
-    {% if s.quarantined %}
-      <span class="badge badge-suspicious">Quarantined</span>
-      {% if current_user.role in ['analyst','admin'] %}
-      <form method="POST" action="{{ url_for('detector.release_quarantine', submission_id=s.id) }}" style="display:inline;">
-        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
-        <button class="button secondary" type="submit">Release from quarantine</button>
-      </form>
-      {% endif %}
-    {% else %}
-      <span class="badge badge-legitimate">Not quarantined</span>
-    {% endif %}
-  </p>
-</div>
-
-<div class="card">
-  <h3>Why this verdict — rule-based indicators</h3>
-  {% if s.rule_indicators() %}
-  <table>
-    <tr><th>Indicator</th><th>Meaning</th></tr>
-    {% for ind in s.rule_indicators() %}
-    <tr><td class="mono">{{ ind }}</td><td>{{ ind|explain_indicator or '—' }}</td></tr>
-    {% endfor %}
-  </table>
-  {% else %}<p class="mono">No rule-based indicators triggered.</p>{% endif %}
-</div>
-
-<div class="card">
-  <h3>Links, domains &amp; threat intelligence</h3>
-  <p class="mono">Addresses are shown defanged (hxxp / [.]) and are never clickable. Offline blocklist matching happens automatically; external lookups run only when an analyst clicks the button below, and every lookup is audit-logged.</p>
-  {% if s.indicators %}
-  <table>
-    <tr><th>Type</th><th>Indicator</th><th>Static findings</th><th>Intel result</th></tr>
-    {% for i in s.indicators %}
-    <tr>
-      <td>{{ i.kind|replace('_', ' ') }}</td>
-      <td class="mono">{{ i.value|defang }}{% if i.redirect_target %}<br>&rarr; redirects to {{ i.redirect_target|defang }}{% endif %}</td>
-      <td>
-        {% if i.blocklisted %}<span class="badge badge-phishing">blocklisted</span> {% endif %}
-        {% for f in i.findings() %}<span class="gate-chip" style="color:var(--warn)">{{ f }}</span>{% endfor %}
-        {% if not i.findings() and not i.blocklisted %}<span class="mono">none</span>{% endif %}
-      </td>
-      <td>
-        {% set intel = i.intel() %}
-        {% if i.intel_verdict %}
-          <span class="badge badge-{{ 'phishing' if i.intel_verdict == 'malicious' else ('suspicious' if i.intel_verdict == 'suspicious' else 'legitimate') }}">{{ i.intel_verdict }}</span>
-          {% if intel.virustotal %}
-            <div class="mono">VirusTotal: {{ intel.virustotal.get('malicious', 0) }} malicious / {{ intel.virustotal.get('suspicious', 0) }} suspicious / {{ intel.virustotal.get('harmless', 0) }} harmless{% if intel.virustotal.detail %} ({{ intel.virustotal.detail }}){% endif %}</div>
-          {% endif %}
-          {% if intel.redirect_chain %}
-            <div class="mono">Redirect chain ({{ intel.redirect_chain.hops }} hop{{ '' if intel.redirect_chain.hops == 1 else 's' }}{% if intel.redirect_chain.truncated %}, truncated{% endif %}):
-              {% for hop in intel.redirect_chain.chain %}<br>{{ hop.status }} {{ hop.url|defang }}{% endfor %}
-              {% if intel.redirect_chain.final_findings %}<br>final destination flagged: {{ intel.redirect_chain.final_findings|join(', ') }}{% endif %}
-            </div>
-          {% endif %}
-        {% else %}<span class="mono">not checked</span>{% endif %}
-      </td>
-    </tr>
-    {% endfor %}
-  </table>
-  {% if current_user.role in ['analyst','admin'] %}
-    {% if intel_configured or resolver_enabled %}
-    <form method="POST" action="{{ url_for('detector.run_threat_intel', submission_id=s.id) }}" style="margin-top:12px;">
+  <div class="page-actions">
+    {% if s.quarantined and current_user.role in ['analyst', 'admin'] %}
+    <form class="inline-form" method="POST" action="{{ url_for('detector.release_quarantine', submission_id=s.id) }}">
       <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
-      <button class="button" type="submit">Run threat-intel lookup</button>
-      <span class="mono">
-        {% if intel_configured %}VirusTotal domain/attachment-hash reputation{% endif %}{% if intel_configured and resolver_enabled %} + {% endif %}{% if resolver_enabled %}safe redirect-chain resolution{% endif %}
-      </span>
+      <button class="btn btn--secondary" type="submit" data-confirm="Release this email from quarantine? Only do this if you are sure it is safe." data-confirm-title="Release from quarantine" data-confirm-ok="Release">{{ icon('i-lock') }}Release from quarantine</button>
     </form>
-    {% else %}
-    <p class="mono" style="margin-top:12px;">External lookups are disabled. Set <code>VIRUSTOTAL_API_KEY</code> and/or <code>ENABLE_REDIRECT_RESOLVER=true</code> in <code>.env</code> to enable them.</p>
     {% endif %}
-  {% endif %}
-  {% else %}<p class="mono">No links or attachments found.</p>{% endif %}
+    <details class="dropdown">
+      <summary class="btn btn--secondary" role="button" aria-haspopup="menu">{{ icon('i-download') }}Export{{ icon('i-chevron-down') }}</summary>
+      <div class="dropdown__menu" role="menu">
+        <a role="menuitem" href="{{ url_for('detector.export_result', submission_id=s.id, fmt='pdf') }}">{{ icon('i-file') }}Export PDF</a>
+        <a role="menuitem" href="{{ url_for('detector.export_result', submission_id=s.id, fmt='csv') }}">{{ icon('i-list') }}Export CSV</a>
+        <a role="menuitem" href="{{ url_for('detector.export_result', submission_id=s.id, fmt='json') }}">{{ icon('i-database') }}Export JSON</a>
+      </div>
+    </details>
+    <a class="btn" href="{{ url_for('detector.upload') }}">{{ icon('i-mail-search') }}Analyze another</a>
+  </div>
 </div>
 
-<div class="card">
-  <h3>Explainability — what the models saw</h3>
-  {% if text_terms %}
-  <h4>Words and phrases that moved the text model</h4>
-  <p class="mono">contribution = model weight × TF-IDF value of the term in this email. Red pushes toward "phishing", green toward "legitimate".</p>
-  <table>
-    <tr><th>Term</th><th>TF-IDF value</th><th>Contribution</th></tr>
-    {% for e in text_terms %}
-    <tr><td>{{ e.feature }}</td><td>{{ e.value }}</td><td style="color: {{ 'var(--danger)' if e.contribution > 0 else 'var(--ok)' }}">{{ e.contribution }}</td></tr>
+{# ---------- verdict hero ---------- #}
+<section class="card card--tone tone-{{ v.tone }}" aria-labelledby="verdict-heading">
+  <div class="verdict-hero">
+    {{ ring(s.risk_score, band.tone) }}
+    <div>
+      <div class="verdict-hero__eyebrow">Threat analysis</div>
+      <div class="verdict-hero__title" id="verdict-heading">{{ icon(v.icon) }}{{ v.label }}</div>
+      <p class="muted mb-0" style="max-width:52ch">
+        {% if s.verdict == 'phishing' %}This email shows strong signs of phishing. Do not interact with it.
+        {% elif s.verdict == 'suspicious' %}This email has suspicious characteristics and should be reviewed before anyone acts on it.
+        {% else %}No significant phishing indicators were found in this email.{% endif %}
+      </p>
+      <div class="row mt-1">
+        {{ band_badge(s.risk_score, true) }}
+        {{ status_badge(s) }}
+        {% if s.analyst_feedback %}<span class="muted small">Analyst: {{ s.analyst_feedback|replace('_', ' ') }}</span>{% endif %}
+      </div>
+    </div>
+    <div class="verdict-hero__stats">
+      <div><span class="stat-line__label">Risk score</span><span class="stat-line__value">{{ s.risk_score|round(1) }} <span class="muted small">/ 100</span></span></div>
+      <div><span class="stat-line__label" data-tooltip="How sure the machine-learning component is of its own answer: the larger of its phishing and legitimate probabilities." tabindex="0">ML confidence</span><span class="stat-line__value">{{ view.confidence_pct }}%</span></div>
+      <div><span class="stat-line__label">Risk band</span><span class="stat-line__value" style="color:var(--{{ band.tone }})">{{ band.label }}</span></div>
+    </div>
+  </div>
+</section>
+
+{# ---------- detection summary ---------- #}
+<section class="mt-3" aria-labelledby="summary-title">
+  <h2 id="summary-title" class="visually-hidden">Detection summary</h2>
+  <div class="grid grid--4" style="grid-template-columns: repeat(auto-fit, minmax(180px, 1fr))">
+    {% for c in view.summary %}
+    <div class="card summary-card tone-{{ c.tone }}">
+      <div class="kpi__icon">{{ icon(c.icon) }}</div>
+      <div>
+        <div class="summary-card__label">{{ c.label }}</div>
+        <div class="summary-card__value">{{ icon(c.status_icon or c.icon) }}{{ c.label_text or c.label }}</div>
+      </div>
+    </div>
     {% endfor %}
-  </table>
-  {% endif %}
-  <h4>Structured features (URL / header / content)</h4>
-  <p class="mono">contribution = coefficient × (standardised feature value); positive pushes toward "phishing".</p>
-  <table>
-    <tr><th>Feature</th><th>Value</th><th>Contribution</th></tr>
-    {% for e in structured_terms %}
-    <tr><td>{{ e.feature }}</td><td>{{ e.value }}</td><td style="color: {{ 'var(--danger)' if e.contribution > 0 else 'var(--ok)' }}">{{ e.contribution }}</td></tr>
+  </div>
+</section>
+
+<div class="grid grid--main-side mt-3">
+  {# ---------- why was this detected ---------- #}
+  <section class="card" aria-labelledby="why-title">
+    <div class="card__header"><h2 id="why-title">{{ icon('i-alert-octagon' if s.verdict != 'legitimate' else 'i-shield-check') }}{% if s.verdict == 'legitimate' %}Why this email looks safe{% else %}Why this email was detected as {{ v.label|lower }}{% endif %}</h2><span class="muted small">{{ view.cards|length }} indicator{{ '' if view.cards|length == 1 else 's' }}</span></div>
+    <div class="card__body stack">
+      {% if view.reasons %}
+      <ul class="reason-list" aria-label="Key reasons">
+        {% for c in view.reasons %}<li class="tone-{{ c.sev.tone }}">{{ icon(c.sev.icon) }}<span>{{ c.title }}</span></li>{% endfor %}
+      </ul>
+      {% endif %}
+      {% for c in view.cards %}
+      <details class="indicator tone-{{ c.sev.tone }}" {% if loop.index <= 3 and c.severity in ('high', 'critical') %}open{% endif %}>
+        <summary>
+          <span class="indicator__icon">{{ icon(c.sev.icon, 'icon--lg') }}</span>
+          <span class="indicator__title">{{ c.title }}</span>
+          {{ severity_badge(c.severity) }}
+          <span class="indicator__chev">{{ icon('i-chevron-down') }}</span>
+        </summary>
+        <div class="indicator__body">
+          {% if c.explanation %}<p class="mb-0">{{ c.explanation }}</p>{% endif %}
+          {% if c.evidence %}
+          <div class="evidence"><strong class="small">Evidence</strong>
+            {% for key, value in c.evidence %}<div class="evidence__row"><span class="evidence__key">{{ key }}</span><span class="evidence__val">{{ value }}</span></div>{% endfor %}
+          </div>
+          {% endif %}
+        </div>
+      </details>
+      {% else %}
+      {{ empty_state('i-shield-check', 'No indicators triggered', 'None of the rule-based or wording checks found anything suspicious in this email.') }}
+      {% endfor %}
+    </div>
+  </section>
+
+  <div class="stack">
+    <section class="card tone-{{ v.tone }}" aria-labelledby="action-title">
+      <div class="card__header"><h2 id="action-title">{{ icon('i-shield-check') }}Recommended action</h2></div>
+      <div class="card__body">
+        <ul class="reason-list">
+          {% for tip in view.recommendations %}<li class="tone-{{ v.tone }}">{{ icon('i-chevron-right') }}<span>{{ tip }}</span></li>{% endfor %}
+        </ul>
+      </div>
+    </section>
+
+    {% if current_user.role in ['analyst', 'admin'] %}
+    <section class="card" aria-labelledby="feedback-title">
+      <div class="card__header"><h2 id="feedback-title">{{ icon('i-flag') }}Analyst feedback</h2></div>
+      <div class="card__body">
+        {% if s.analyst_feedback %}
+          <p class="mb-0">Recorded: <strong>{{ s.analyst_feedback|replace('_', ' ') }}</strong></p>
+          {% if s.feedback_notes %}<p class="muted small mt-1 mb-0">{{ s.feedback_notes }}</p>{% endif %}
+        {% else %}
+        <form method="POST" action="{{ url_for('detector.submit_feedback', submission_id=s.id) }}">
+          <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+          <div class="field"><label for="notes">Notes (optional)</label><textarea id="notes" class="textarea" name="notes" rows="2" style="min-height:70px;font-family:var(--font)"></textarea></div>
+          <div class="row">
+            <button class="btn btn--danger" type="submit" name="feedback" value="confirmed_phish" data-confirm="Record this email as confirmed phishing? It stays quarantined." data-confirm-title="Confirm phishing" data-confirm-ok="Confirm phishing">{{ icon('i-alert-octagon') }}Confirm phishing</button>
+            <button class="btn btn--secondary" type="submit" name="feedback" value="false_positive" data-confirm="Mark this email as a false positive? It will be released from quarantine." data-confirm-title="Mark as false positive" data-confirm-ok="Mark false positive">{{ icon('i-check') }}Mark false positive</button>
+          </div>
+        </form>
+        {% endif %}
+      </div>
+    </section>
+    {% endif %}
+  </div>
+</div>
+
+{# ---------- detail tabs ---------- #}
+<section class="card mt-3" data-tabs aria-label="Email details">
+  <div class="tabs__list" role="tablist" aria-label="Email details">
+    <button class="tabs__tab" id="tab-overview" type="button">{{ icon('i-info') }}Overview</button>
+    <button class="tabs__tab" id="tab-headers" type="button">{{ icon('i-server') }}Headers</button>
+    <button class="tabs__tab" id="tab-urls" type="button">{{ icon('i-link') }}URLs <span class="tabs__count">{{ view.tab_counts.urls }}</span></button>
+    <button class="tabs__tab" id="tab-content" type="button">{{ icon('i-file') }}Content</button>
+    <button class="tabs__tab" id="tab-attachments" type="button">{{ icon('i-paperclip') }}Attachments <span class="tabs__count">{{ view.tab_counts.attachments }}</span></button>
+    <button class="tabs__tab" id="tab-authentication" type="button">{{ icon('i-key') }}Authentication</button>
+    <button class="tabs__tab" id="tab-indicators" type="button">{{ icon('i-list') }}Indicators <span class="tabs__count">{{ view.tab_counts.indicators }}</span></button>
+  </div>
+
+  {# --- overview --- #}
+  <div class="tabs__panel" data-title="Overview">
+    <div class="grid grid--2">
+      <div>
+        <h3>Message</h3>
+        <dl class="kv">
+          <dt>Subject</dt><dd>{{ s.subject or '—' }}</dd>
+          <dt>From</dt><dd>{{ s.sender or '—' }}</dd>
+          <dt>Analysed</dt><dd>{{ s.created_at|dt }}</dd>
+          <dt>Source</dt><dd>{{ s.original_filename }}</dd>
+          <dt>SHA-256</dt><dd class="mono">{{ s.sha256_hash }}</dd>
+        </dl>
+      </div>
+      <div>
+        <h3>How the score was built</h3>
+        <p class="muted small">Final score = 50% rule-based score + 50% machine-learning probability.</p>
+        <div class="table-wrap"><table class="table">
+          <thead><tr><th scope="col">Component</th><th scope="col">Value</th><th scope="col">Measures</th></tr></thead>
+          <tbody>
+            <tr><td>Rule-based score</td><td class="nowrap">{{ s.rule_score if s.rule_score is not none else 'n/a' }} / 100</td><td class="muted small">URL, header/sender and content checks</td></tr>
+            <tr><td>Text model</td><td>{{ s.text_probability if s.text_probability is not none else 'not trained' }}</td><td class="muted small">Wording learned from real phishing and legitimate mail</td></tr>
+            <tr><td>Structured model</td><td>{{ s.structured_probability if s.structured_probability is not none else 'n/a' }}</td><td class="muted small">URL / header / content feature vector</td></tr>
+            <tr><td>Blended ML probability</td><td>{{ s.ml_probability }}</td><td class="muted small">65% text model + 35% structured model</td></tr>
+          </tbody>
+        </table></div>
+      </div>
+    </div>
+  </div>
+
+  {# --- headers --- #}
+  <div class="tabs__panel" data-title="Headers">
+    <div class="grid grid--2">
+      <div>
+        <h3>Sender analysis</h3>
+        <dl class="kv">
+          <dt>From</dt><dd>{{ view.sender.raw or 'not recorded' }}</dd>
+          <dt>Display name</dt><dd>{{ view.sender.display_name or '—' }}</dd>
+          <dt>Sender domain</dt><dd class="mono">{{ view.sender.domain|defang if view.sender.domain else '—' }}</dd>
+          <dt>Reply-To</dt><dd>{{ view.reply_to.raw or 'not present' }}
+            {% if view.reply_mismatch %}{{ tone_badge('Domain mismatch', 'danger', 'i-alert') }}{% elif view.reply_to.raw %}{{ tone_badge('Matches sender', 'success', 'i-check') }}{% endif %}</dd>
+          <dt>Return-Path</dt><dd>{{ view.return_path.raw or 'not present' }}
+            {% if view.return_mismatch %}{{ tone_badge('Domain mismatch', 'warning', 'i-alert') }}{% elif view.return_path.raw %}{{ tone_badge('Matches sender', 'success', 'i-check') }}{% endif %}</dd>
+        </dl>
+        {% if not s.reply_to and not s.return_path %}<p class="muted small mt-1 mb-0">Reply-To and Return-Path values are recorded for emails analysed after this feature was added.</p>{% endif %}
+      </div>
+      <div>
+        <h3>Headers present in the message</h3>
+        {% if view.header_names %}<div class="row" style="gap:6px">{% for name in view.header_names %}<span class="chip">{{ name }}</span>{% endfor %}</div>
+        {% else %}<p class="muted">No header names were recorded.</p>{% endif %}
+        <h3 class="mt-2">Header and sender findings</h3>
+        {% if view.header_cards %}<ul class="reason-list">{% for c in view.header_cards %}<li class="tone-{{ c.sev.tone }}">{{ icon(c.sev.icon) }}<span><strong>{{ c.title }}</strong><br><span class="muted small">{{ c.explanation }}</span></span></li>{% endfor %}</ul>
+        {% else %}<p class="muted">No sender or header anomalies were found.</p>{% endif %}
+      </div>
+    </div>
+  </div>
+
+  {# --- urls --- #}
+  <div class="tabs__panel" data-title="URLs">
+    {% if view.url_rows %}
+    <p class="muted small">Addresses are shown defanged (<code>hxxp</code>, <code>[.]</code>) and are never clickable. Offline blocklist matching runs automatically; external lookups run only when an analyst requests them, and every lookup is audit-logged.</p>
+    <div class="table-wrap"><table class="table table--stack">
+      <caption class="visually-hidden">Links and domains found in the email</caption>
+      <thead><tr><th scope="col">URL</th><th scope="col">Domain</th><th scope="col">HTTPS</th><th scope="col">Risk</th><th scope="col">Indicators</th><th scope="col">Status</th></tr></thead>
+      <tbody>
+      {% for r in view.url_rows %}{% set sv = r.severity|severity_view %}
+        <tr>
+          <td data-label="URL"><span class="cell-main mono" style="font-weight:500" title="{{ r.display }}">{{ r.display }}</span></td>
+          <td data-label="Domain" class="mono">{{ r.domain }}</td>
+          <td data-label="HTTPS">{% if r.https is none %}<span class="muted">—</span>{% elif r.https %}{{ tone_badge('Yes', 'success', 'i-lock') }}{% else %}{{ tone_badge('No', 'warning', 'i-alert') }}{% endif %}</td>
+          <td data-label="Risk">{{ severity_badge(r.severity) }}</td>
+          <td data-label="Indicators">
+            {% if r.findings %}
+            <details class="disclosure"><summary style="cursor:pointer">{{ r.findings|length }} indicator{{ '' if r.findings|length == 1 else 's' }}</summary>
+              <ul class="reason-list mt-1" style="text-align:left">
+                {% for f in r.findings %}{% set fs = f|indicator_title %}<li class="tone-{{ 'danger' if r.severity in ('high', 'critical') else 'warning' }}">{{ icon('i-alert') }}<span><strong>{{ fs }}</strong><br><span class="muted small">{{ ('URL: ' ~ f)|explain_indicator_text }}</span></span></li>{% endfor %}
+                {% if r.redirect_target %}<li class="tone-info">{{ icon('i-link') }}<span>Redirects to <span class="mono">{{ r.redirect_target|defang }}</span></span></li>{% endif %}
+              </ul>
+            </details>
+            {% else %}<span class="muted">None</span>{% endif %}
+          </td>
+          <td data-label="Status">
+            {% if r.blocklisted %}{{ tone_badge('Blocklisted', 'critical', 'i-flame') }}
+            {% elif r.intel_verdict %}{{ tone_badge('Intel: ' ~ r.intel_verdict, 'danger' if r.intel_verdict == 'malicious' else ('warning' if r.intel_verdict == 'suspicious' else 'success')) }}
+            {% elif r.findings %}{{ tone_badge('Flagged', 'warning', 'i-flag') }}{% else %}{{ tone_badge('No findings', 'success', 'i-check') }}{% endif %}
+          </td>
+        </tr>
+      {% endfor %}
+      </tbody>
+    </table></div>
+
+    <h3 class="mt-3">Threat-intelligence results</h3>
+    {% set ns = namespace(any=false) %}
+    {% for i in s.indicators if i.intel_verdict %}{% set ns.any = true %}{% set intel = i.intel() %}
+    <div class="alert tone-{{ 'danger' if i.intel_verdict == 'malicious' else ('warning' if i.intel_verdict == 'suspicious' else 'success') }} mb-2">{{ icon('i-globe') }}<div>
+      <strong class="mono">{{ i.value|defang }}</strong> · {{ i.kind|replace('_', ' ') }} · <strong>{{ i.intel_verdict }}</strong>
+      {% if intel.virustotal %}<div class="small">VirusTotal: {{ intel.virustotal.get('malicious', 0) }} malicious / {{ intel.virustotal.get('suspicious', 0) }} suspicious / {{ intel.virustotal.get('harmless', 0) }} harmless{% if intel.virustotal.detail %} ({{ intel.virustotal.detail }}){% endif %}</div>{% endif %}
+      {% if intel.redirect_chain %}<div class="small mono">Redirect chain ({{ intel.redirect_chain.hops }} hop{{ '' if intel.redirect_chain.hops == 1 else 's' }}{% if intel.redirect_chain.truncated %}, truncated{% endif %}):
+        {% for hop in intel.redirect_chain.chain %}<br>{{ hop.status }} {{ hop.url|defang }}{% endfor %}
+        {% if intel.redirect_chain.final_findings %}<br>final destination flagged: {{ intel.redirect_chain.final_findings|join(', ') }}{% endif %}</div>{% endif %}
+    </div></div>
+    {% endfor %}
+    {% if not ns.any %}<p class="muted small">No external lookups have been run for this email.</p>{% endif %}
+    {% if current_user.role in ['analyst', 'admin'] %}
+      {% if intel_configured or resolver_enabled %}
+      <form method="POST" action="{{ url_for('detector.run_threat_intel', submission_id=s.id) }}">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+        <button class="btn" type="submit">{{ icon('i-globe') }}Run threat-intel lookup</button>
+        <span class="muted small">{% if intel_configured %}VirusTotal domain / attachment-hash reputation{% endif %}{% if intel_configured and resolver_enabled %} + {% endif %}{% if resolver_enabled %}safe redirect-chain resolution{% endif %}</span>
+      </form>
+      {% else %}<p class="muted small">External lookups are off. Set <code>VIRUSTOTAL_API_KEY</code> and/or <code>ENABLE_REDIRECT_RESOLVER=true</code> in <code>.env</code> to enable them.</p>{% endif %}
+    {% endif %}
     {% else %}
-    <tr><td colspan="3" class="mono">No structured feature moved the score.</td></tr>
-    {% endfor %}
-  </table>
-</div>
+    {{ empty_state('i-link', 'No links or domains found', 'This email did not contain any URLs to analyse.') }}
+    {% endif %}
+  </div>
 
-<div class="card">
-  <h3>Attachments (metadata/hash only — never opened)</h3>
-  {% if s.attachment_summary() %}
-  <table>
-    <tr><th>Filename</th><th>Declared type</th><th>Size</th><th>SHA-256</th></tr>
-    {% for a in s.attachment_summary() %}
-    <tr><td>{{ a.filename }}</td><td>{{ a.declared_type }}</td><td>{{ a.size_bytes }} B</td><td class="mono">{{ a.sha256 }}</td></tr>
-    {% endfor %}
-  </table>
-  {% else %}<p class="mono">No attachments.</p>{% endif %}
-</div>
+  {# --- content --- #}
+  <div class="tabs__panel" data-title="Content">
+    <p class="muted small">The message body is analysed for wording and structure and is <strong>not stored</strong>; only the resulting indicators are kept.</p>
+    <div class="grid grid--2">
+      <div>
+        <h3>Wording and structure findings</h3>
+        {% if view.content_cards %}<ul class="reason-list">{% for c in view.content_cards %}<li class="tone-{{ c.sev.tone }}">{{ icon(c.sev.icon) }}<span><strong>{{ c.title }}</strong><br><span class="muted small">{{ c.explanation }}</span>{% for key, value in c.evidence %}<br><span class="small"><span class="faint">{{ key }}:</span> {{ value }}</span>{% endfor %}</span></li>{% endfor %}</ul>
+        {% else %}<p class="muted">No suspicious wording or structure was found.</p>{% endif %}
+      </div>
+      <div>
+        <h3>Words that moved the text model</h3>
+        {% if view.text_terms %}
+        <p class="muted small">Contribution = model weight × TF-IDF value. <span style="color:var(--danger)">Red</span> pushes toward phishing, <span style="color:var(--success)">green</span> toward legitimate.</p>
+        <div class="table-wrap"><table class="table"><thead><tr><th scope="col">Term</th><th scope="col" class="num">TF-IDF</th><th scope="col" class="num">Contribution</th></tr></thead><tbody>
+          {% for e in view.text_terms %}<tr><td>{{ e.feature }}</td><td class="num">{{ e.value }}</td><td class="num" style="color:var(--{{ 'danger' if e.contribution > 0 else 'success' }});font-weight:650">{{ '+' if e.contribution > 0 }}{{ e.contribution }}</td></tr>{% endfor %}
+        </tbody></table></div>
+        {% else %}<p class="muted">The text model did not contribute any terms.</p>{% endif %}
+      </div>
+    </div>
+  </div>
 
-<div class="card">
-  <h3>Export</h3>
-  <a class="button secondary" href="{{ url_for('detector.export_result', submission_id=s.id, fmt='pdf') }}">Export PDF</a>
-  <a class="button secondary" href="{{ url_for('detector.export_result', submission_id=s.id, fmt='csv') }}">Export CSV</a>
-  <a class="button secondary" href="{{ url_for('detector.export_result', submission_id=s.id, fmt='json') }}">Export JSON</a>
-</div>
+  {# --- attachments --- #}
+  <div class="tabs__panel" data-title="Attachments">
+    {% if s.attachment_summary() %}
+    <p class="muted small">Attachments are hashed and immediately discarded. They are never opened, rendered or executed.</p>
+    <div class="table-wrap"><table class="table table--stack"><caption class="visually-hidden">Attachments</caption>
+      <thead><tr><th scope="col">Filename</th><th scope="col">Declared type</th><th scope="col" class="num">Size</th><th scope="col">SHA-256</th><th scope="col">Intel</th></tr></thead><tbody>
+      {% for a in s.attachment_summary() %}
+        {% set ns = namespace(verdict=none) %}{% for i in s.indicators if i.kind == 'attachment_hash' and i.value == a.sha256 %}{% set ns.verdict = i.intel_verdict %}{% endfor %}
+        <tr><td data-label="Filename"><span class="cell-main">{{ a.filename }}</span></td><td data-label="Type">{{ a.declared_type }}</td><td data-label="Size" class="num">{{ a.size_bytes }} B</td>
+          <td data-label="SHA-256"><span class="mono">{{ a.sha256 }}</span></td>
+          <td data-label="Intel">{% if ns.verdict %}{{ tone_badge(ns.verdict, 'danger' if ns.verdict == 'malicious' else ('warning' if ns.verdict == 'suspicious' else 'success')) }}{% else %}<span class="muted">not checked</span>{% endif %}</td></tr>
+      {% endfor %}
+    </tbody></table></div>
+    {% else %}{{ empty_state('i-paperclip', 'No attachments', 'This email did not include any attachments.') }}{% endif %}
+  </div>
 
-{% if current_user.role in ['analyst','admin'] %}
-<div class="card">
-  <h3>Analyst feedback</h3>
-  {% if s.analyst_feedback %}
-    <p>Recorded feedback: <b>{{ s.analyst_feedback }}</b></p>
-    {% if s.feedback_notes %}<p class="mono">{{ s.feedback_notes }}</p>{% endif %}
-  {% else %}
-  <form method="POST" action="{{ url_for('detector.submit_feedback', submission_id=s.id) }}">
-    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
-    <label>Notes (optional)</label>
-    <textarea name="notes" rows="2"></textarea>
-    <button class="button" type="submit" name="feedback" value="confirmed_phish">Confirm phishing</button>
-    <button class="button secondary" type="submit" name="feedback" value="false_positive">Mark false positive</button>
-  </form>
-  {% endif %}
-</div>
-{% endif %}
+  {# --- authentication --- #}
+  <div class="tabs__panel" data-title="Authentication">
+    <div class="alert tone-{{ view.auth_tone }} mb-2">{{ icon('i-key') }}<div><strong>Overall: {{ view.auth_label }}</strong>
+      <div class="small muted">SPF, DKIM and DMARC are read from the <code>Authentication-Results</code> header recorded by the receiving mail server. They are not re-checked over the network.</div></div></div>
+    <div class="authgrid">
+      {% for c in view.auth_cells %}
+      <div class="authcell tone-{{ c.tone }}"><div class="authcell__name">{{ c.name }}</div><div class="authcell__status">{{ icon(c.icon) }}{{ c.label }}</div><div class="muted small">{{ c.desc }}</div></div>
+      {% endfor %}
+    </div>
+    {% if not view.auth_present %}<p class="muted small mt-2 mb-0">No authentication results were present in this message. Plain pasted text and forwarded messages usually lack them; paste the full raw email to include them.</p>{% endif %}
+  </div>
+
+  {# --- indicators --- #}
+  <div class="tabs__panel" data-title="Indicators">
+    {% if view.cards %}
+    <div class="table-wrap"><table class="table"><caption class="visually-hidden">All triggered indicators</caption>
+      <thead><tr><th scope="col">Indicator</th><th scope="col">Category</th><th scope="col">Severity</th><th scope="col">Code</th></tr></thead><tbody>
+      {% for c in view.cards %}<tr><td><strong>{{ c.title }}</strong><br><span class="muted small">{{ c.explanation }}</span></td><td>{{ c.category|capitalize }}</td><td>{{ severity_badge(c.severity) }}</td><td><span class="chip">{{ c.code }}</span></td></tr>{% endfor %}
+    </tbody></table></div>
+    {% else %}<p class="muted">No indicators were triggered.</p>{% endif %}
+    <h3 class="mt-3">Structured features that moved the score</h3>
+    <div class="table-wrap"><table class="table"><thead><tr><th scope="col">Feature</th><th scope="col" class="num">Value</th><th scope="col" class="num">Contribution</th></tr></thead><tbody>
+      {% for e in view.structured_terms %}<tr><td>{{ e.feature }}</td><td class="num">{{ e.value }}</td><td class="num" style="color:var(--{{ 'danger' if e.contribution > 0 else 'success' }});font-weight:650">{{ '+' if e.contribution > 0 }}{{ e.contribution }}</td></tr>
+      {% else %}<tr><td colspan="3" class="muted">No structured feature moved the score.</td></tr>{% endfor %}
+    </tbody></table></div>
+  </div>
+</section>
 {% endblock %}

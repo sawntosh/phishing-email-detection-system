@@ -96,7 +96,8 @@ def test_unhandled_exception_shows_friendly_page_without_leaking_details(client,
     body = resp.get_data(as_text=True)
     assert resp.status_code == 500
     assert "Something went wrong" in body and "Error reference:" in body
-    for leaked in ("RuntimeError", "hunter2", "Traceback", "C:\\internal", "_boom", "secret-db-password"):
+    for leaked in ("RuntimeError", "hunter2", "Traceback", "C:\\internal", "def _boom", "test_error_handling_logging",
+                   "site-packages", "secret-db-password"):
         assert leaked not in body
     assert len(resp.headers["X-Request-ID"]) == 12
     assert resp.headers["X-Request-ID"] in body
