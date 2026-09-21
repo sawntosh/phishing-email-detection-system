@@ -8,8 +8,5 @@ htmlcov/
 *.egg-info/
 .venv/
 venv/
-<<<<<<< HEAD
 .DS_Store
-=======
 data/
->>>>>>> f678d98 (Add real-corpus text model, threat intel, redirect checks, review queue)

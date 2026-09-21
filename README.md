@@ -46,15 +46,6 @@ cd src
 python app.py                      # http://127.0.0.1:5000
 ```
 
-<<<<<<< HEAD
-First run: set `DEFAULT_ADMIN_USERNAME/EMAIL/PASSWORD` in `.env` before
-first start to auto-create an admin account (see `_ensure_default_admin`
-in `app.py`). Self-registration at `/auth/register` always creates an
-`analyst` account by design — registrants cannot choose their own role,
-since that would be a privilege-escalation hole in the RBAC feature.
-Either way you'll be sent through TOTP 2FA setup (scan the QR code with
-Google Authenticator/Authy) before you can log in.
-=======
 ### Training data
 
 `train_model.py` expects the two public research corpora under `data/` (git-ignored, not redistributed):
@@ -86,12 +77,13 @@ ENABLE_REDIRECT_RESOLVER=true   # enables the safe redirect-chain resolver
 Then open any result and click **Run threat-intel lookup** (analyst/admin only). To use the offline blocklist,
 copy `threat_intel/blocklist.sample.txt` to `instance/threat_intel/blocklist.txt` and add domains.
 
-First run: either set `DEFAULT_ADMIN_USERNAME/EMAIL/PASSWORD` in `.env`
-before first start to auto-create an admin, **or** just register the first
-account at `/auth/register` and select role `admin`. Either way you'll be
-sent through TOTP 2FA setup (scan the QR code with Google Authenticator/Authy)
-before you can log in.
->>>>>>> f678d98 (Add real-corpus text model, threat intel, redirect checks, review queue)
+First run: set `DEFAULT_ADMIN_USERNAME/EMAIL/PASSWORD` in `.env` before
+first start to auto-create an admin account (see `_ensure_default_admin`
+in `app.py`). Self-registration at `/auth/register` always creates an
+`analyst` account by design — registrants cannot choose their own role,
+since that would be a privilege-escalation hole in the RBAC feature.
+Either way you'll be sent through TOTP 2FA setup (scan the QR code with
+Google Authenticator/Authy) before you can log in.
 
 Try it immediately with the two sample emails in `sample_emails/`
 (`phishing_paypal.eml` scores ~98/100 and is auto-quarantined;
@@ -104,7 +96,7 @@ cd src
 pytest ../tests -v --cov=. --cov-report=term-missing
 ```
 
-121 tests. Covers: RBAC/2FA/lockout, every Zero-Trust gate
+131 tests. Covers: RBAC/2FA/lockout, every Zero-Trust gate
 individually (including attachment-containment and HTML-sanitisation
 properties), rule-based analysis modules, the hybrid risk engine, the
 tamper-evident audit log (including a test that verifies **tampering is

@@ -104,6 +104,10 @@ def dashboard():
     )
 
 
+def _is_listed(findings):
+    return "blocklisted_domain" in findings or "known_malicious_domain" in findings
+
+
 def _store_indicators(submission, url_report, attachments):
     """Persist the domains, suspicious URLs and attachment hashes found in a submission
     so an analyst can later run threat-intel lookups against them."""
@@ -113,7 +117,7 @@ def _store_indicators(submission, url_report, attachments):
         if domain:
             entry = per_domain.setdefault(domain, {"findings": set(), "blocklisted": False})
             entry["findings"].update(result["findings"])
-            entry["blocklisted"] = entry["blocklisted"] or "blocklisted_domain" in result["findings"]
+            entry["blocklisted"] = entry["blocklisted"] or _is_listed(result["findings"])
 
     for domain, entry in list(per_domain.items())[:MAX_INDICATORS]:
         db.session.add(ExtractedIndicator(
@@ -126,7 +130,7 @@ def _store_indicators(submission, url_report, attachments):
         db.session.add(ExtractedIndicator(
             submission=submission, kind="url", value=result["url"][:1000],
             findings_json=json.dumps(result["findings"]),
-            blocklisted="blocklisted_domain" in result["findings"],
+            blocklisted=_is_listed(result["findings"]),
             redirect_target=(result.get("redirect_target") or "")[:255] or None,
         ))
 
@@ -297,7 +301,7 @@ def _combined_intel_verdict(intel):
 
 
 def _worth_resolving(indicator):
-    return any(f in ("url_shortener", "open_redirect_param", "embedded_url_in_path") for f in indicator.findings())
+    return any(f in ("url_shortener", "open_redirect_parameter", "nested_url_in_url") for f in indicator.findings())
 
 
 @detector_bp.route("/result/<int:submission_id>/threat-intel", methods=["POST"])
