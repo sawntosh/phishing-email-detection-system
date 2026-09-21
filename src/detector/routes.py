@@ -16,6 +16,7 @@ from analysis import zero_trust, risk_engine, threat_intel
 from analysis.explanations import defang
 from analysis.url_analysis import analyse_url
 from analysis.zero_trust import ZeroTrustRejection
+from detector import pasted
 
 detector_bp = Blueprint("detector", __name__, template_folder="../templates/detector")
 
@@ -146,16 +147,33 @@ def _store_indicators(submission, url_report, attachments):
 def upload():
     if request.method == "POST":
         file = request.files.get("email_file")
-        if not file or file.filename == "":
-            flash("Please choose a .eml or .txt file.", "danger")
+        has_file = bool(file and file.filename)
+        pasted_text = request.form.get("message_text", "")
+        has_paste = bool(pasted_text.strip())
+
+        if has_file and has_paste:
+            flash("Please use only one input: either paste a message or upload a file.", "danger")
+            return redirect(url_for("detector.upload"))
+        if not has_file and not has_paste:
+            flash("Paste a message or choose a .eml/.txt file to analyse.", "danger")
             return redirect(url_for("detector.upload"))
 
-        raw_bytes = file.read()
+        if has_file:
+            raw_bytes, filename, mimetype = file.read(), file.filename, file.mimetype
+        else:
+            try:
+                raw_bytes, filename, mimetype = pasted.build_from_paste(
+                    pasted_text, request.form.get("message_subject", ""), request.form.get("message_sender", ""),
+                )
+            except pasted.PastedMessageError as exc:
+                flash(str(exc), "danger")
+                return redirect(url_for("detector.upload"))
+
         try:
             result = zero_trust.ingest(
                 raw_bytes=raw_bytes,
-                filename=file.filename,
-                declared_mimetype=file.mimetype,
+                filename=filename,
+                declared_mimetype=mimetype,
                 user=current_user,
                 max_bytes=current_app.config["MAX_CONTENT_LENGTH"],
                 allowed_ext=current_app.config["ALLOWED_UPLOAD_EXTENSIONS"],
@@ -184,7 +202,7 @@ def upload():
 
         submission = EmailSubmission(
             user_id=current_user.id,
-            original_filename=file.filename,
+            original_filename=filename,
             sha256_hash=result.sha256_hash,
             sender=result.sender,
             sender_display_name=scored["header_report"]["display_name"],

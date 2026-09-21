@@ -14,7 +14,7 @@ full STRIDE analysis and advanced-feature evaluation.
 ## Feature checklist (maps to the assessment brief)
 
 - [x] Secure login with RBAC (analyst/admin) and TOTP 2FA
-- [x] Safe `.eml`/text parsing; attachments handled by metadata/hash only
+- [x] Safe `.eml`/text parsing; attachments handled by metadata/hash only. **Two input modes on the Analyse page: paste a message (optionally with subject/sender, or a full raw email with headers) or upload a `.eml`/`.txt` file** -- both go through the same Zero-Trust pipeline
 - [x] URL/domain analysis, look-alike domain detection, IP-literal/punycode/shortener checks
 - [x] **Suspicious-redirect checks**: open-redirect parameters (incl. double-encoded), `user@host` tricks, URLs embedded in paths, redirects into look-alike domains, non-standard ports
 - [x] **Reputation / threat intelligence**: offline domain blocklist on every upload + analyst-triggered VirusTotal domain/attachment-hash lookups + hardened redirect-chain resolver (both off until configured, audit-logged)
@@ -96,7 +96,7 @@ cd src
 pytest ../tests -v --cov=. --cov-report=term-missing
 ```
 
-131 tests. Covers: RBAC/2FA/lockout, every Zero-Trust gate
+149 tests. Covers: RBAC/2FA/lockout, every Zero-Trust gate
 individually (including attachment-containment and HTML-sanitisation
 properties), rule-based analysis modules, the hybrid risk engine, the
 tamper-evident audit log (including a test that verifies **tampering is
@@ -105,7 +105,7 @@ score → quarantine → export flows with cross-user access-control checks, plu
 blocklist matching, VirusTotal response handling and input validation (no request is ever sent for a malformed
 domain/hash), SSRF guards of the redirect resolver (private/loopback/metadata addresses, DNS rebinding, ports, schemes,
 hop cap), pure-Python text-model inference matching scikit-learn exactly, the false-positive review workflow, CSV
-formula-injection and PDF-markup safety, and automatic database column migration.
+formula-injection and PDF-markup safety, pasted-message analysis (header-injection safe, same Zero-Trust gates as uploads), and automatic database column migration.
 
 ## Running the security tools locally (mirrors `ci-cd/pipeline.yml`)
 

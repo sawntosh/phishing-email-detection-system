@@ -2,14 +2,38 @@
 {% block title %}Analyse email{% endblock %}
 {% block content %}
 <h1>Analyse an email</h1>
+<p class="mono">Choose <b>one</b> way to submit. Both go through the same Zero-Trust ingestion pipeline (authorisation → size/MIME allow-list → structural parse → content sanitisation → attachment containment) before any analysis runs, and flagged messages are quarantined by default. Maximum size 5&nbsp;MB.</p>
+
 <div class="card">
-  <p class="mono">Upload a .eml or .txt file (max 5&nbsp;MB). Every submission passes through the Zero-Trust ingestion
-  pipeline (authorisation → size/MIME allow-list → structural parse → content sanitisation → attachment
-  containment) before any analysis runs, and is quarantined by default if flagged.</p>
-  <form method="POST" enctype="multipart/form-data">
+  <h3 style="margin-top:0;">Option 1 &mdash; Analyse a pasted message</h3>
+  <form method="POST" action="{{ url_for('detector.upload') }}">
     <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
-    <label>Email file (.eml or .txt)</label>
-    <input type="file" name="email_file" accept=".eml,.txt" required>
+    <label for="message_text">MESSAGE CONTENT</label>
+    <textarea id="message_text" name="message_text" rows="9" maxlength="500000"
+              placeholder="Paste the email text here. Links in it are analysed too. You can also paste a full raw email including its headers (from your mail client's &quot;view source&quot;) to include SPF/DKIM/DMARC and sender checks."></textarea>
+    <div class="grid" style="grid-template-columns: 1fr 1fr;">
+      <div>
+        <label for="message_subject">Subject (optional)</label>
+        <input id="message_subject" type="text" name="message_subject" maxlength="200" placeholder="e.g. Urgent: verify your account">
+      </div>
+      <div>
+        <label for="message_sender">Sender (optional)</label>
+        <input id="message_sender" type="text" name="message_sender" maxlength="200" placeholder='e.g. "PayPal Support" &lt;help@paypa1-secure.com&gt;'>
+      </div>
+    </div>
+    <p class="mono">Pasted plain text has no mail headers, so SPF/DKIM/DMARC show as "not evaluated". Paste the full raw email to get those checks.</p>
+    <button class="button" type="submit">ANALYZE</button>
+  </form>
+</div>
+
+<p class="mono" style="text-align:center;">&mdash; or &mdash;</p>
+
+<div class="card">
+  <h3 style="margin-top:0;">Option 2 &mdash; Upload an email file</h3>
+  <form method="POST" action="{{ url_for('detector.upload') }}" enctype="multipart/form-data">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+    <label for="email_file">Email file (.eml or .txt)</label>
+    <input id="email_file" type="file" name="email_file" accept=".eml,.txt" required>
     <button class="button" type="submit">Run analysis</button>
   </form>
 </div>
