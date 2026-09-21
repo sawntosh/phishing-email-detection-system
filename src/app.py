@@ -7,7 +7,9 @@ from flask_wtf import CSRFProtect
 from dotenv import load_dotenv
 from sqlalchemy import inspect, text
 
-from config import Config
+from config import BASE_DIR, Config
+from error_handlers import register_error_handlers
+from logging_config import configure_logging, register_request_logging
 from models import db, User
 
 csrf = CSRFProtect()
@@ -17,9 +19,15 @@ login_manager.login_view = "auth.login"
 
 def create_app(config_class=Config):
     load_dotenv()
-    app = Flask(__name__, instance_relative_config=True)
+    # Pin the instance folder to <project>/instance, where the database, trained models, evaluation
+    # reports and logs live. Flask's default would be src/instance, a different (empty) folder.
+    app = Flask(__name__, instance_path=os.path.join(BASE_DIR, "instance"), instance_relative_config=True)
     app.config.from_object(config_class)
     os.makedirs(app.instance_path, exist_ok=True)
+
+    configure_logging(app)
+    register_request_logging(app)
+    register_error_handlers(app)
 
     db.init_app(app)
     csrf.init_app(app)
@@ -52,14 +60,6 @@ def create_app(config_class=Config):
         if app.config.get("SESSION_COOKIE_SECURE"):
             response.headers["Strict-Transport-Security"] = "max-age=31536000; includeSubDomains"
         return response
-
-    @app.errorhandler(403)
-    def forbidden(e):
-        return render_template("errors/403.html"), 403
-
-    @app.errorhandler(404)
-    def not_found(e):
-        return render_template("errors/404.html"), 404
 
     from analysis.explanations import explain_indicator, defang
     app.jinja_env.filters["explain_indicator"] = explain_indicator
@@ -117,4 +117,7 @@ def _ensure_default_admin(app):
 
 if __name__ == "__main__":
     application = create_app()
-    application.run(debug=os.environ.get("FLASK_ENV") != "production")
+    # Werkzeug's interactive debugger can execute code and shows stack traces, so it is opt-in
+    # (FLASK_DEBUG=true in .env) and can never be enabled when FLASK_ENV=production.
+    debug_requested = os.environ.get("FLASK_DEBUG", "").strip().lower() in ("1", "true", "yes", "on")
+    application.run(debug=debug_requested and os.environ.get("FLASK_ENV") != "production")

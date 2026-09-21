@@ -18,6 +18,9 @@ from datetime import datetime, timezone
 from flask_login import UserMixin
 from flask_sqlalchemy import SQLAlchemy
 from passlib.context import CryptContext
+from werkzeug.security import check_password_hash as _legacy_check_password_hash
+
+from logging_config import security_log
 
 db = SQLAlchemy()
 
@@ -26,6 +29,7 @@ db = SQLAlchemy()
 # hashing scheme is ever upgraded, old hashes verify fine and are
 # transparently re-hashed on next successful login (see User.check_password).
 pwd_context = CryptContext(schemes=["argon2"], deprecated="auto")
+_LEGACY_HASH_PREFIXES = ("pbkdf2:", "scrypt:")
 
 
 def utcnow():
@@ -65,7 +69,19 @@ class User(db.Model, UserMixin):
         self.password_hash = pwd_context.hash(raw_password)
 
     def check_password(self, raw_password):
-        return pwd_context.verify(raw_password, self.password_hash)
+        """True if the password matches. Accounts created before the switch to Argon2id hold
+        Werkzeug hashes (pbkdf2:/scrypt:); those still verify, and on success the hash is
+        replaced with a fresh Argon2id one (the caller's commit persists it). A corrupt or
+        unrecognised stored hash is treated as a failed login, never an exception."""
+        stored = self.password_hash or ""
+        legacy = stored.startswith(_LEGACY_HASH_PREFIXES)
+        try:
+            matches = _legacy_check_password_hash(stored, raw_password) if legacy else pwd_context.verify(raw_password, stored)
+        except (ValueError, TypeError):
+            return False
+        if matches and (legacy or pwd_context.needs_update(stored)):
+            self.password_hash = pwd_context.hash(raw_password)
+        return matches
 
     @property
     def is_active(self):
@@ -203,6 +219,8 @@ class AuditLog(db.Model):
         )
         db.session.add(entry)
         db.session.commit()
+        # Every audited event is mirrored to the structured SECURITY log (no passwords / email content).
+        security_log(event_type, user_id=user_id, username=username, ip=ip_address, detail=detail)
         return entry
 
     @classmethod

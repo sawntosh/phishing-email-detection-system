@@ -52,6 +52,10 @@ class Config:
 
     RATELIMIT_STORAGE_URI = "memory://"
 
+    # Logging (JSON lines; SECURITY events go to instance/logs/security.log)
+    LOG_LEVEL = os.environ.get("LOG_LEVEL", "INFO").strip().upper()
+    LOG_TO_FILE = _env_flag("LOG_TO_FILE") if os.environ.get("LOG_TO_FILE") else True
+
     # Threat intelligence. Lookups are NEVER run automatically on ingestion
     # (an email is attacker-controlled input); an analyst must trigger them,
     # and every lookup is written to the audit log.

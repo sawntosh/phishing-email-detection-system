@@ -1,0 +1,10 @@
+{% extends "base.html" %}
+{% block title %}{{ code }} — {{ title }}{% endblock %}
+{% block content %}
+<div class="card">
+  <h2>{{ code }} — {{ title }}</h2>
+  <p>{{ message }}</p>
+  {% if reference %}<p class="mono">Error reference: {{ reference }} (quote this if you contact an administrator)</p>{% endif %}
+  <p><a class="button secondary" href="{{ url_for('detector.dashboard') if current_user.is_authenticated else url_for('auth.login') }}">Back to safety</a></p>
+</div>
+{% endblock %}

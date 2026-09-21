@@ -96,7 +96,7 @@ cd src
 pytest ../tests -v --cov=. --cov-report=term-missing
 ```
 
-149 tests. Covers: RBAC/2FA/lockout, every Zero-Trust gate
+187 tests. Covers: RBAC/2FA/lockout, every Zero-Trust gate
 individually (including attachment-containment and HTML-sanitisation
 properties), rule-based analysis modules, the hybrid risk engine, the
 tamper-evident audit log (including a test that verifies **tampering is
@@ -187,6 +187,9 @@ rate-limited (20/hour), capped per click, and written to the tamper-evident audi
 - Rate limiting: 20/hour on auth endpoints, 30/hour on uploads.
 - Session cookies: `HttpOnly`, `SameSite=Lax`, `Secure` in production.
 - Security headers: `X-Content-Type-Options`, `X-Frame-Options`, CSP, `Referrer-Policy`, HSTS in production.
+- Errors: users see a friendly page with an error reference only; stack traces, SQL and paths go to the server log. The Werkzeug debugger is off by default (`FLASK_DEBUG=true` to opt in; never in production).
+- Logging: structured JSON lines with INFO / WARNING / ERROR / SECURITY levels, a request id on every line and on the `X-Request-ID` response header, secrets and email content redacted, log-forging via newlines impossible. Audit-log events are mirrored to `instance/logs/security.log`.
+- Passwords: Argon2id; accounts created with the older PBKDF2 hashes still log in and are upgraded transparently on first successful login.
 - Model files are plain JSON, never pickle (avoids deserialisation/RCE risk).
 - Result pages show domains defanged (`hxxp`, `[.]`) and never as clickable links; CSV exports are formula-injection safe; PDF text is XML-escaped.
 - All secrets read from `.env` (git-ignored); `.env.example` documents required keys.

@@ -1,2 +1,2 @@
 {% extends "base.html" %}
-{% block content %}<div class="card"><h2>404 — Not found</h2></div>{% endblock %}
+{% block content %}<div class="card"><h2>404 — Not found</h2><p>That page does not exist.</p>{% if reference %}<p class="mono">Reference: {{ reference }}</p>{% endif %}</div>{% endblock %}

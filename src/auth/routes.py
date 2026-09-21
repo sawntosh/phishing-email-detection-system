@@ -95,10 +95,14 @@ def login():
             flash("Account temporarily locked due to repeated failed attempts. Try again later.", "danger")
             return render_template("auth/login.html", form=form)
 
+        hash_before = user.password_hash if user else None
         if user and user.check_password(form.password.data):
             user.failed_login_count = 0
             user.locked_until = None
             db.session.commit()
+            if user.password_hash != hash_before:
+                AuditLog.append("password_hash_upgraded", user_id=user.id, username=user.username,
+                                ip_address=_client_ip(), detail="legacy or outdated hash replaced with Argon2id")
             if not user.totp_enabled:
                 session["setup_2fa_user_id"] = user.id
                 flash("Please finish setting up two-factor authentication.", "warning")
