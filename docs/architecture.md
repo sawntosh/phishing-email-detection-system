@@ -10,7 +10,7 @@ flowchart TB
 
     subgraph FlaskApp["Flask application (app.py factory)"]
         AUTH["auth blueprint<br/>register / login / 2FA (PyOTP TOTP)"]
-        DET["detector blueprint<br/>upload / result / export"]
+        DET["detector blueprint<br/>upload / result / review queue / export / threat-intel trigger"]
         ADM["admin blueprint<br/>audit log / model performance"]
         SEC["security_utils<br/>RBAC decorators + rate limiter"]
     end
@@ -28,11 +28,19 @@ flowchart TB
         URLM[url_analysis.py]
         HDR[header_analysis.py]
         CONT[content_analysis.py]
-        ML["ml_classifier.py<br/>Logistic Regression + explainability"]
-        RISK["risk_engine.py<br/>hybrid rule+ML scoring"]
+        ML["ml_classifier.py<br/>structured-feature Logistic Regression"]
+        TXT["text_model.py<br/>TF-IDF + Logistic Regression<br/>trained on Nazario + Enron (JSON)"]
+        RISK["risk_engine.py<br/>hybrid rule + 2 ML models"]
     end
 
-    DB[("SQLite<br/>users / email_submissions / audit_log")]
+    subgraph Intel["threat_intel.py (analyst-triggered only)"]
+        BL["offline blocklist<br/>(also checked at ingest)"]
+        VT["VirusTotal client<br/>fixed host, validated inputs"]
+        RR["redirect resolver<br/>public IPs only, HEAD, 5 hops"]
+    end
+
+    DB[("SQLite<br/>users / email_submissions / extracted_indicators / audit_log")]
+    NET(("Internet<br/>VirusTotal + redirect hosts"))
 
     UI -->|HTTPS, CSRF-protected forms| AUTH
     UI --> DET
@@ -46,6 +54,11 @@ flowchart TB
     HDR --> RISK
     CONT --> RISK
     ML --> RISK
+    TXT --> RISK
+    BL --> URLM
+    DET -->|analyst clicks lookup, audited| Intel
+    VT --> NET
+    RR --> NET
     RISK -->|risk_score, verdict, explanation| DET
     AUTH --> DB
     DET --> DB
@@ -88,6 +101,7 @@ sequenceDiagram
 ```mermaid
 erDiagram
     USERS ||--o{ EMAIL_SUBMISSIONS : submits
+    EMAIL_SUBMISSIONS ||--o{ EXTRACTED_INDICATORS : "domains / urls / attachment hashes"
     USERS ||--o{ AUDIT_LOG : "acts (nullable FK)"
 
     USERS {
@@ -114,10 +128,25 @@ erDiagram
         string verdict
         text rule_indicators_json
         float ml_probability
+        float rule_score
+        float text_probability
+        float structured_probability
         text ml_explanation_json
         text attachment_summary_json "metadata/hash only"
         bool quarantined
         string analyst_feedback
+    }
+    EXTRACTED_INDICATORS {
+        int id PK
+        int submission_id FK
+        string kind "domain|url|attachment_hash"
+        text value "attacker-controlled: shown defanged only"
+        text findings_json
+        bool blocklisted
+        string redirect_target
+        text intel_json "VirusTotal / redirect-chain results"
+        string intel_verdict
+        datetime intel_checked_at
     }
     AUDIT_LOG {
         int id PK
@@ -142,9 +171,17 @@ erDiagram
 
 The brief requires an **explainability view showing the features/indicators
 that influenced the risk score**. A linear model's per-prediction
-explanation (`contribution = coefficient × standardised_value`) is *exact*,
-not a post-hoc approximation — this is a direct, defensible way to satisfy
-that requirement without introducing a separate explainability library
-(SHAP/LIME), while still combining with independent rule-based indicators
-in `risk_engine.py` for defence-in-depth against a single model being
-gamed (see `docs/threat_model.md`, item 11).
+explanation is *exact*, not a post-hoc approximation:
+
+- structured model: `contribution = coefficient x standardised_value`
+- text model: `contribution = coefficient x tfidf(term)`, summed with the intercept to give the logit
+
+This satisfies the requirement without a separate explainability library
+(SHAP/LIME). The reference project compared ten classifiers (Doc2Vec
+embeddings, Random Forest, XGBoost, ...) for accuracy only; `train_model.py`
+benchmarks four alternatives on the same split and the admin page shows
+them side by side, so the accuracy cost of choosing an explainable model is
+measured rather than assumed (it is small: ~0.97 vs ~0.98 F1 for the best
+linear SVM). The ML score is then combined 50/50 with independent
+rule-based indicators in `risk_engine.py` for defence-in-depth against a
+single model being gamed (see `docs/threat_model.md`, items 11 and 12).

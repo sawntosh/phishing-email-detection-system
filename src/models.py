@@ -100,6 +100,10 @@ class EmailSubmission(db.Model):
     verdict = db.Column(db.String(20))        # legitimate | suspicious | phishing
     rule_indicators_json = db.Column(db.Text)  # JSON list of triggered rule indicators
     ml_probability = db.Column(db.Float)
+    # Score breakdown (nullable: rows created before these columns existed have none)
+    rule_score = db.Column(db.Float)
+    text_probability = db.Column(db.Float)
+    structured_probability = db.Column(db.Float)
     ml_explanation_json = db.Column(db.Text)  # JSON list of top contributing features
     attachment_summary_json = db.Column(db.Text)  # metadata/hash only, never content
 
@@ -117,6 +121,36 @@ class EmailSubmission(db.Model):
 
     def attachment_summary(self):
         return json.loads(self.attachment_summary_json or "[]")
+
+    indicators = db.relationship(
+        "ExtractedIndicator", backref="submission", lazy="select",
+        cascade="all, delete-orphan", order_by="ExtractedIndicator.id",
+    )
+
+
+class ExtractedIndicator(db.Model):
+    """A domain, suspicious URL or attachment hash pulled from a submission.
+    Also holds the result of any analyst-triggered external lookup so the
+    result page and exports can show them. Values are attacker-controlled text:
+    they are only ever rendered defanged and auto-escaped, never as live links."""
+    __tablename__ = "extracted_indicators"
+
+    id = db.Column(db.Integer, primary_key=True)
+    submission_id = db.Column(db.Integer, db.ForeignKey("email_submissions.id"), nullable=False, index=True)
+    kind = db.Column(db.String(20), nullable=False)        # domain | url | attachment_hash
+    value = db.Column(db.Text, nullable=False)
+    findings_json = db.Column(db.Text)                     # static findings for this URL/domain
+    blocklisted = db.Column(db.Boolean, default=False, nullable=False)
+    redirect_target = db.Column(db.String(255))
+    intel_json = db.Column(db.Text)                        # {"virustotal": {...}, "redirect_chain": {...}}
+    intel_verdict = db.Column(db.String(20))               # clean | suspicious | malicious | unknown
+    intel_checked_at = db.Column(db.DateTime)
+
+    def findings(self):
+        return json.loads(self.findings_json or "[]")
+
+    def intel(self):
+        return json.loads(self.intel_json or "{}")
 
 
 class AuditLog(db.Model):

@@ -16,13 +16,16 @@ full STRIDE analysis and advanced-feature evaluation.
 - [x] Secure login with RBAC (analyst/admin) and TOTP 2FA
 - [x] Safe `.eml`/text parsing; attachments handled by metadata/hash only
 - [x] URL/domain analysis, look-alike domain detection, IP-literal/punycode/shortener checks
+- [x] **Suspicious-redirect checks**: open-redirect parameters (incl. double-encoded), `user@host` tricks, URLs embedded in paths, redirects into look-alike domains, non-standard ports
+- [x] **Reputation / threat intelligence**: offline domain blocklist on every upload + analyst-triggered VirusTotal domain/attachment-hash lookups + hardened redirect-chain resolver (both off until configured, audit-logged)
 - [x] Header/sender analysis: SPF/DKIM/DMARC parsing, display-name spoofing, reply-to mismatch
-- [x] Content/keyword/structure analysis with a human-readable risk score
-- [x] Hybrid detection: rules + Logistic Regression ML classifier
-- [x] Explainability view (top contributing features per prediction)
-- [x] Quarantine simulation, analyst feedback workflow, false-positive review
-- [x] Exportable PDF / CSV / JSON reports
-- [x] Dashboard: detection rates, common indicators, false positives
+- [x] Content/keyword/structure analysis with a human-readable risk score and a plain-English reason for every indicator
+- [x] **Hybrid detection: rules + a text model trained on real phishing (Nazario) and legitimate (Enron) mail + a structured-feature model**
+- [x] Explainability view: exact per-word contributions from the text model, per-feature contributions from the structured model, and a score-breakdown table
+- [x] Quarantine simulation, analyst feedback workflow, **false-positive review queue** with labelled-feedback CSV export
+- [x] Exportable PDF / CSV / JSON reports (per submission and export-all), CSV formula-injection safe
+- [x] Dashboard: detection rate, false-positive rate, analyst-confirmed precision, verdict distribution, 14-day trend, common indicators, tool activity
+- [x] Admin model-performance page: held-out metrics on the real corpus, side-by-side classifier benchmark, globally strongest phishing/legitimate terms
 - [x] **Advanced feature: Zero-Trust email-ingestion pipeline**
 - [x] DevSecOps: GitHub Actions 5-stage pipeline (Build/Lint → SAST → Dependency check → Test+coverage gate → Deploy)
 - [x] Tamper-evident, hash-chained audit log with chain-verification UI
@@ -37,12 +40,13 @@ pip install -r requirements.txt
 
 cp .env.example .env               # then edit .env: set SECRET_KEY, optionally DEFAULT_ADMIN_*
 
-python train_model.py              # trains the ML classifier -> instance/model.json
+python train_model.py              # trains on data/ (real corpus) -> instance/model_text.json + model.json (~1 min)
 
 cd src
 python app.py                      # http://127.0.0.1:5000
 ```
 
+<<<<<<< HEAD
 First run: set `DEFAULT_ADMIN_USERNAME/EMAIL/PASSWORD` in `.env` before
 first start to auto-create an admin account (see `_ensure_default_admin`
 in `app.py`). Self-registration at `/auth/register` always creates an
@@ -50,6 +54,44 @@ in `app.py`). Self-registration at `/auth/register` always creates an
 since that would be a privilege-escalation hole in the RBAC feature.
 Either way you'll be sent through TOTP 2FA setup (scan the QR code with
 Google Authenticator/Authy) before you can log in.
+=======
+### Training data
+
+`train_model.py` expects the two public research corpora under `data/` (git-ignored, not redistributed):
+
+```
+data/phishing/*.csv    Jose Nazario phishing corpus, 2015-2021   (label 1)
+data/enron/*.csv       Enron e-mail dataset                       (label 0)
+```
+
+Each CSV needs `subject` and `content` columns. They are the same files as `Notebook/Dataset/` in
+<https://github.com/mohammedtouheedpatelgithubcom/Phishing-Email-Detection>. Without `data/` the script
+falls back to a small synthetic corpus (`--source synthetic`) so the app and tests still run.
+
+```bash
+python train_model.py                       # auto: real corpus if data/ exists
+python train_model.py --max-legit 15000     # cap on Enron messages used (default 15000)
+python train_model.py --source synthetic    # offline / fast
+```
+
+### Optional: threat intelligence
+
+Add to `.env` (all optional, see `.env.example`):
+
+```
+VIRUSTOTAL_API_KEY=...          # enables VirusTotal domain + attachment-hash reputation
+ENABLE_REDIRECT_RESOLVER=true   # enables the safe redirect-chain resolver
+```
+
+Then open any result and click **Run threat-intel lookup** (analyst/admin only). To use the offline blocklist,
+copy `threat_intel/blocklist.sample.txt` to `instance/threat_intel/blocklist.txt` and add domains.
+
+First run: either set `DEFAULT_ADMIN_USERNAME/EMAIL/PASSWORD` in `.env`
+before first start to auto-create an admin, **or** just register the first
+account at `/auth/register` and select role `admin`. Either way you'll be
+sent through TOTP 2FA setup (scan the QR code with Google Authenticator/Authy)
+before you can log in.
+>>>>>>> f678d98 (Add real-corpus text model, threat intel, redirect checks, review queue)
 
 Try it immediately with the two sample emails in `sample_emails/`
 (`phishing_paypal.eml` scores ~98/100 and is auto-quarantined;
@@ -62,12 +104,16 @@ cd src
 pytest ../tests -v --cov=. --cov-report=term-missing
 ```
 
-37 tests, ~79% coverage. Covers: RBAC/2FA/lockout, every Zero-Trust gate
+121 tests. Covers: RBAC/2FA/lockout, every Zero-Trust gate
 individually (including attachment-containment and HTML-sanitisation
 properties), rule-based analysis modules, the hybrid risk engine, the
 tamper-evident audit log (including a test that verifies **tampering is
 actually detected**, not just that appends work), and end-to-end upload →
-score → quarantine → export flows with cross-user access-control checks.
+score → quarantine → export flows with cross-user access-control checks, plus: redirect/userinfo/embedded-URL detection,
+blocklist matching, VirusTotal response handling and input validation (no request is ever sent for a malformed
+domain/hash), SSRF guards of the redirect resolver (private/loopback/metadata addresses, DNS rebinding, ports, schemes,
+hop cap), pure-Python text-model inference matching scikit-learn exactly, the false-positive review workflow, CSV
+formula-injection and PDF-markup safety, and automatic database column migration.
 
 ## Running the security tools locally (mirrors `ci-cd/pipeline.yml`)
 
@@ -93,11 +139,17 @@ safety check -r requirements.txt           # dependency CVE scan
     url_analysis.py          - URL/domain/look-alike/IP-literal checks
     header_analysis.py       - SPF/DKIM/DMARC, sender-spoofing checks
     content_analysis.py      - urgency/credential-request keyword scoring
-    features.py               - single source of truth for the ML feature vector
-    ml_classifier.py          - explainable Logistic Regression (JSON-serialised, no pickle)
-    synthetic_data.py         - documented synthetic training-data generator (see limitation below)
-    risk_engine.py            - fuses rules + ML into one explainable verdict
+    features.py               - single source of truth for the structured feature vector
+    text_model.py             - TF-IDF + Logistic Regression on real mail (JSON-serialised, exact per-word explanations)
+    dataset_loader.py         - loads/dedupes the Nazario + Enron corpora from data/
+    ml_classifier.py          - structured-feature Logistic Regression (JSON-serialised, no pickle)
+    synthetic_data.py         - synthetic generator for the structured model (only source of header signal) + offline fallback
+    threat_intel.py           - offline blocklist, VirusTotal client, SSRF-hardened redirect resolver
+    explanations.py           - plain-English text for every indicator; URL defanging
+    risk_engine.py            - fuses rules + both ML models into one explainable verdict
   /templates, /static       - server-rendered UI
+/data                       - training corpora (git-ignored; see "Training data")
+/threat_intel               - sample blocklist
 /tests                      - pytest suite (see above)
 /ci-cd/pipeline.yml         - GitHub Actions DevSecOps pipeline (mirror to .github/workflows/)
 /docs
@@ -107,30 +159,33 @@ safety check -r requirements.txt           # dependency CVE scan
 train_model.py                - trains + evaluates the ML classifier, prints precision/recall/F1/FPR
 ```
 
-## Important limitation to disclose in the report
+## Important limitations to disclose in the report
 
-**The ML classifier is trained on a synthetic, template-generated corpus**
-(`analysis/synthetic_data.py`), because this environment has no network
-access to real phishing corpora (Nazario, PhishTank, Enron-Spam, etc.) at
-build time. `train_model.py` reports a genuine held-out evaluation
-(precision/recall/F1/confusion matrix/FPR) — but treat that as a
-**proof-of-pipeline result**, not a real-world accuracy claim, in Section 5/6
-of the report. Before any real deployment, retrain on an authorised,
-ethically-sourced phishing corpus using the exact same `train_model.py`
-entry point — the feature extraction and model code do not need to change,
-only the data source (swap out `generate_dataset()` in
-`analysis/synthetic_data.py` for a real-corpus loader that yields the same
-`{subject, body_text, sender_raw, raw_headers, attachment_count, label}`
-dict shape).
+**The text model is trained on real but dated, era-skewed data.** Phishing = Nazario 2015-2021, legitimate = Enron
+(2000s corporate mail). Held-out F1 is ~0.97 with a ~0.4% false-positive rate, but part of that separation is
+style/era rather than intent, so treat it as an upper bound and expect more false positives on modern legitimate
+marketing mail. Mitigations already in place: corpus-identifying tokens (`enron`, first names, `energy`...) are
+excluded, exact duplicates are removed before the split, and the ML signal is only half of the final score (the other
+half is independent rule-based URL/header/content checks). The **Review queue** exports analyst-labelled feedback
+so the model can be retrained on in-domain mail. See `docs/threat_model.md` for the full residual-risk list.
 
-## Extending reputation lookups
+**The structured-feature model is trained on the synthetic generator** (`analysis/synthetic_data.py`) because none of
+the public corpora contain raw headers, so SPF/DKIM/DMARC/Reply-To signal exists nowhere else. Its 1.0 metrics are a
+proof-of-pipeline result only and are labelled as such on the Model-performance page.
 
-`analysis/url_analysis.py` intentionally never makes a live network request
-against a URL found in a submitted email (that would be an SSRF /
-self-inflicted-click risk — see `docs/threat_model.md`). To add a real
-threat-intel lookup (VirusTotal, PhishTank, Google Safe Browsing), add a new
-function that is called explicitly by an analyst action (never automatically
-on ingestion) and clearly logged to the audit trail.
+The admin page also benchmarks Linear SVM, Naive Bayes, Random Forest and Decision Tree on the same split (the
+reference project compared ten classifiers). Logistic Regression is deployed on purpose: its predictions decompose
+exactly into per-word contributions, which the black-box alternatives cannot do without approximations like SHAP/LIME.
+
+## Threat-intelligence design
+
+`analysis/url_analysis.py` never makes a request for a URL found in an email during ingestion (that would be an SSRF
+/ self-inflicted-click risk). Everything network-facing lives in `analysis/threat_intel.py` and is analyst-triggered,
+rate-limited (20/hour), capped per click, and written to the tamper-evident audit log:
+
+- **Offline blocklist** - checked on every upload with no network access; hot-reloads when the file changes.
+- **VirusTotal** - fixed https host; only a validated domain or SHA-256 digest is ever placed in the request path.
+- **Redirect resolver** - refuses non-public DNS answers, connects to the validated IP, HEAD only, ports 80/443, 5 hops.
 
 ## Security notes
 
@@ -140,5 +195,6 @@ on ingestion) and clearly logged to the audit trail.
 - Rate limiting: 20/hour on auth endpoints, 30/hour on uploads.
 - Session cookies: `HttpOnly`, `SameSite=Lax`, `Secure` in production.
 - Security headers: `X-Content-Type-Options`, `X-Frame-Options`, CSP, `Referrer-Policy`, HSTS in production.
-- Model file is plain JSON, never pickle (avoids deserialisation/RCE risk).
+- Model files are plain JSON, never pickle (avoids deserialisation/RCE risk).
+- Result pages show domains defanged (`hxxp`, `[.]`) and never as clickable links; CSV exports are formula-injection safe; PDF text is XML-escaped.
 - All secrets read from `.env` (git-ignored); `.env.example` documents required keys.

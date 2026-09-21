@@ -1,3 +1,4 @@
+from analysis import risk_engine
 from analysis.risk_engine import score_email
 
 PHISH_HEADERS = {"Authentication-Results": "spf=fail; dkim=fail; dmarc=fail"}
@@ -36,6 +37,28 @@ def test_explanation_features_are_human_readable_and_bounded():
         sender_raw="a@b.com",
         raw_headers={},
     )
-    assert len(result["ml_explanation"]) <= 6
+    structured = [e for e in result["ml_explanation"] if e["source"] == "structured"]
+    text_terms = [e for e in result["ml_explanation"] if e["source"] == "text"]
+    assert len(structured) <= 6
+    assert len(text_terms) <= 8
     for item in result["ml_explanation"]:
-        assert set(item.keys()) == {"feature", "value", "contribution"}
+        assert set(item.keys()) == {"feature", "value", "contribution", "source"}
+
+
+def test_score_breakdown_is_returned():
+    result = score_email("Lunch?", "Are you free on Friday?", "a@b.com", LEGIT_HEADERS)
+    assert 0 <= result["structured_probability"] <= 1
+    assert result["text_probability"] is None or 0 <= result["text_probability"] <= 1
+    assert 0 <= result["rule_score_pct"] <= 100
+
+
+def test_engine_degrades_gracefully_without_a_text_model(monkeypatch):
+    monkeypatch.setattr(risk_engine, "get_text_model", lambda: None)
+    result = score_email(
+        "Urgent: verify your account", "Click here to verify your password http://paypa1-secure.com/x",
+        '"PayPal" <a@paypa1-secure.com>', PHISH_HEADERS,
+    )
+    assert result["text_probability"] is None
+    assert result["ml_probability"] == result["structured_probability"]
+    assert all(e["source"] == "structured" for e in result["ml_explanation"])
+    assert result["verdict"] in ("phishing", "suspicious")

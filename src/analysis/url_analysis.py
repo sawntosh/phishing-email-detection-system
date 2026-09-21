@@ -1,20 +1,26 @@
 """
 URL / domain analysis.
 Covers: URL/domain extraction, look-alike (typosquat) domain detection,
-suspicious-redirect / IP-literal / punycode checks, and a pluggable
-reputation-lookup hook (offline heuristic by default; swap in a real
-threat-intel API such as VirusTotal/PhishTank in production -- see
-README "Extending reputation lookups").
+suspicious-redirect checks (open-redirect parameters, userinfo tricks,
+URLs embedded in paths, shorteners), IP-literal/punycode checks, and an
+OFFLINE blocklist lookup (analysis/threat_intel.py).
 
-All checks are static/passive: no request is ever made to a URL found in a
-submitted email (that would be an SSRF / self-inflicted-click risk). This
-is itself a security decision worth citing in the report.
+All checks here are static/passive: no request is ever made to a URL found in
+a submitted email during ingestion (that would be an SSRF / self-inflicted-
+click risk). Live reputation and redirect-chain lookups exist, but only as
+explicit, audited, analyst-triggered actions -- see threat_intel.py.
 """
 import re
 import ipaddress
+<<<<<<< HEAD
 from urllib.parse import urlparse, parse_qs, unquote
+=======
+from urllib.parse import urlparse, parse_qsl, unquote
+>>>>>>> f678d98 (Add real-corpus text model, threat intel, redirect checks, review queue)
 
 import tldextract
+
+from analysis import threat_intel
 
 # Offline-safe extractor: never fetches the public suffix list over the
 # network at analysis time (a live email/URL analysis tool must not make
@@ -94,6 +100,7 @@ def _is_punycode(host: str) -> bool:
     return any(label.startswith("xn--") for label in host.split("."))
 
 
+<<<<<<< HEAD
 def _check_redirect_indicators(url: str, parsed) -> list:
     """Static/passive open-redirect and nested-URL detection. Never
     follows the URL -- only inspects its own text, so it stays safe to
@@ -137,6 +144,42 @@ def check_reputation(registered_domain: str, host: str) -> dict:
 
 
 def analyse_url(url: str) -> dict:
+=======
+REDIRECT_PARAMS = {
+    "url", "u", "q", "redirect", "redirect_uri", "redirect_url", "redir", "next", "return",
+    "return_to", "returnurl", "goto", "dest", "destination", "continue", "target", "link", "out", "to",
+}
+_REDIRECT_VALUE_RE = re.compile(r"^(?:https?:)?//([^/\s?#]+)", re.IGNORECASE)
+
+# Points per finding (default 6). Stronger signals are weighted higher.
+FINDING_POINTS = {
+    "open_redirect_param": 10,
+    "redirect_to_suspicious_target": 12,
+    "userinfo_in_url": 12,
+    "embedded_url_in_path": 8,
+    "blocklisted_domain": 30,
+}
+
+
+def _find_redirect_target(parsed, own_registered_domain):
+    """Return the full URL an open-redirect parameter points at, if it leaves the
+    link's own registered domain (e.g. https://good.com/r?url=https://evil.com)."""
+    for key, value in parse_qsl(parsed.query, keep_blank_values=False):
+        if key.lower() not in REDIRECT_PARAMS:
+            continue
+        candidate = unquote(value).strip()  # second decode handles double-encoded targets
+        match = _REDIRECT_VALUE_RE.match(candidate)
+        if not match:
+            continue
+        target_host = match.group(1).rsplit("@", 1)[-1].split(":")[0].lower()
+        target_registered = (_extract(target_host).registered_domain or target_host).lower()
+        if target_host and target_registered != own_registered_domain:
+            return candidate if candidate.lower().startswith("http") else "https:" + candidate
+    return None
+
+
+def analyse_url(url: str, _depth: int = 0) -> dict:
+>>>>>>> f678d98 (Add real-corpus text model, threat intel, redirect checks, review queue)
     parsed = urlparse(url)
     host = (parsed.hostname or "").lower()
     ext = _extract(url)
@@ -144,6 +187,7 @@ def analyse_url(url: str) -> dict:
 
     findings = []
     lookalike_of = None
+    redirect_target = None
 
     if _is_ip_literal(host):
         findings.append("ip_literal_host")
@@ -160,11 +204,36 @@ def analyse_url(url: str) -> dict:
     if len(url) > 120:
         findings.append("excessively_long_url")
 
+<<<<<<< HEAD
     findings.extend(_check_redirect_indicators(url, parsed))
 
     reputation = check_reputation(registered_domain, host)
     if reputation["verdict"] == "known_malicious":
         findings.append("known_malicious_domain")
+=======
+    # "http://paypal.com@evil.com/" -- everything before '@' is decoration, the real host is evil.com
+    if "@" in parsed.netloc:
+        findings.append("userinfo_in_url")
+    try:
+        port = parsed.port
+    except ValueError:
+        port = None
+    if port not in (None, 80, 443):
+        findings.append("nonstandard_port")
+    if "://" in unquote(parsed.path):
+        findings.append("embedded_url_in_path")
+
+    redirect_target = _find_redirect_target(parsed, registered_domain)
+    if redirect_target:
+        findings.append("open_redirect_param")
+        if _depth == 0:
+            inner = analyse_url(redirect_target, _depth=1)
+            if any(f != "no_tls" for f in inner["findings"]):
+                findings.append("redirect_to_suspicious_target")
+
+    if threat_intel.is_blocklisted(host, registered_domain):
+        findings.append("blocklisted_domain")
+>>>>>>> f678d98 (Add real-corpus text model, threat intel, redirect checks, review queue)
 
     domain_label = ext.domain.lower() if ext.domain else ""
     normalised_label = _normalise_domain_label(domain_label)
@@ -190,8 +259,13 @@ def analyse_url(url: str) -> dict:
         "registered_domain": registered_domain,
         "findings": findings,
         "lookalike_of": lookalike_of,
+<<<<<<< HEAD
         "reputation": reputation,
         "risk_points": risk_points,
+=======
+        "redirect_target": redirect_target,
+        "risk_points": sum(FINDING_POINTS.get(f, 6) for f in findings),
+>>>>>>> f678d98 (Add real-corpus text model, threat intel, redirect checks, review queue)
     }
 
 

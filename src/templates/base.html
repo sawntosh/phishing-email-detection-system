@@ -13,6 +13,7 @@
     <div class="nav-links">
       <a href="{{ url_for('detector.dashboard') }}">Dashboard</a>
       <a href="{{ url_for('detector.upload') }}">Analyse email</a>
+      {% if current_user.role in ['analyst','admin'] %}<a href="{{ url_for('detector.review_queue') }}">Review queue</a>{% endif %}
       {% if current_user.is_admin %}
         <a href="{{ url_for('admin.audit_log') }}">Audit log</a>
         <a href="{{ url_for('admin.model_performance') }}">Model performance</a>

@@ -1,25 +1,68 @@
 {% extends "base.html" %}
 {% block title %}Model performance{% endblock %}
 {% block content %}
-<h1>Model & tool performance</h1>
+<h1>Model &amp; tool performance</h1>
+
+{% if text_report %}
+<div class="card">
+  <h3>Text model — held-out evaluation</h3>
+  <p class="mono">Trained on: {{ text_report.provenance }} &nbsp;|&nbsp; {{ text_report.n_train }} train / {{ text_report.n_test }} test &nbsp;|&nbsp; phishing share {{ (text_report.phishing_share * 100)|round(1) }}%</p>
+  <div class="grid grid-4">
+    <div class="stat"><div class="num">{{ text_report.deployed.precision }}</div><div class="label">Precision</div></div>
+    <div class="stat"><div class="num">{{ text_report.deployed.recall }}</div><div class="label">Recall</div></div>
+    <div class="stat"><div class="num">{{ text_report.deployed.f1_score }}</div><div class="label">F1 score</div></div>
+    <div class="stat"><div class="num">{{ text_report.deployed.false_positive_rate }}</div><div class="label">False positive rate</div></div>
+  </div>
+  <table>
+    <tr><th></th><th>Predicted legitimate</th><th>Predicted phishing</th></tr>
+    <tr><td>Actual legitimate</td><td>{{ text_report.deployed.confusion_matrix.tn }} (TN)</td><td>{{ text_report.deployed.confusion_matrix.fp }} (FP)</td></tr>
+    <tr><td>Actual phishing</td><td>{{ text_report.deployed.confusion_matrix.fn }} (FN)</td><td>{{ text_report.deployed.confusion_matrix.tp }} (TP)</td></tr>
+  </table>
+  <p class="mono">{{ text_report.note }}</p>
+</div>
+
+<div class="card">
+  <h3>Classifier comparison (same data, same split)</h3>
+  <p class="mono">The deployed model is Logistic Regression because its predictions decompose exactly into per-word contributions. The other classifiers are benchmarks only.</p>
+  <table>
+    <tr><th>Model</th><th>Accuracy</th><th>Precision</th><th>Recall</th><th>F1</th><th>FPR</th><th>ROC-AUC</th><th>Train s</th></tr>
+    {% for m in text_report.comparison %}
+    <tr {% if m.deployed %}style="font-weight:600;"{% endif %}>
+      <td>{{ m.name }}</td><td>{{ m.accuracy }}</td><td>{{ m.precision }}</td><td>{{ m.recall }}</td>
+      <td>{{ m.f1_score }}</td><td>{{ m.false_positive_rate }}</td><td>{{ m.roc_auc }}</td><td>{{ m.train_seconds if m.train_seconds is not none else '—' }}</td>
+    </tr>
+    {% endfor %}
+  </table>
+</div>
+
+<div class="card">
+  <h3>What the text model learned (global explainability)</h3>
+  <div class="grid" style="grid-template-columns: 1fr 1fr;">
+    <div>
+      <label>Strongest phishing terms</label>
+      <table>{% for t in text_report.top_terms.phishing %}<tr><td>{{ t.term }}</td><td style="color:var(--danger)">+{{ t.coef }}</td></tr>{% endfor %}</table>
+    </div>
+    <div>
+      <label>Strongest legitimate terms</label>
+      <table>{% for t in text_report.top_terms.legitimate %}<tr><td>{{ t.term }}</td><td style="color:var(--ok)">{{ t.coef }}</td></tr>{% endfor %}</table>
+    </div>
+  </div>
+</div>
+{% else %}
+<div class="card"><p class="mono">No text-model report found — run <code>python train_model.py</code> first.</p></div>
+{% endif %}
+
 {% if eval_report %}
 <div class="card">
-  <h3>Held-out evaluation (train_model.py)</h3>
+  <h3>Structured-feature model (synthetic data — proof of pipeline)</h3>
   <div class="grid grid-4">
     <div class="stat"><div class="num">{{ eval_report.precision }}</div><div class="label">Precision</div></div>
     <div class="stat"><div class="num">{{ eval_report.recall }}</div><div class="label">Recall</div></div>
     <div class="stat"><div class="num">{{ eval_report.f1_score }}</div><div class="label">F1 score</div></div>
     <div class="stat"><div class="num">{{ eval_report.false_positive_rate }}</div><div class="label">False positive rate</div></div>
   </div>
-  <table>
-    <tr><th></th><th>Predicted legitimate</th><th>Predicted phishing</th></tr>
-    <tr><td>Actual legitimate</td><td>{{ eval_report.confusion_matrix.tn }} (TN)</td><td>{{ eval_report.confusion_matrix.fp }} (FP)</td></tr>
-    <tr><td>Actual phishing</td><td>{{ eval_report.confusion_matrix.fn }} (FN)</td><td>{{ eval_report.confusion_matrix.tp }} (TP)</td></tr>
-  </table>
   <p class="mono">{{ eval_report.note }}</p>
 </div>
-{% else %}
-<div class="card"><p class="mono">No evaluation report found — run <code>python train_model.py</code> first.</p></div>
 {% endif %}
 
 <div class="card">
@@ -29,5 +72,15 @@
     <div class="stat"><div class="num" style="color:var(--danger)">{{ confirmed_count }}</div><div class="label">Confirmed phishing</div></div>
     <div class="stat"><div class="num" style="color:var(--warn)">{{ fp_count }}</div><div class="label">False positives reported</div></div>
   </div>
+</div>
+
+<div class="card">
+  <h3>Threat-intelligence tools</h3>
+  <table>
+    <tr><th>Tool</th><th>Status</th></tr>
+    <tr><td>Offline domain blocklist</td><td>{{ tools.blocklist_entries }} domain(s) loaded</td></tr>
+    <tr><td>VirusTotal reputation lookup</td><td>{{ 'enabled' if tools.virustotal else 'disabled (no API key)' }}</td></tr>
+    <tr><td>Redirect-chain resolver</td><td>{{ 'enabled' if tools.redirect_resolver else 'disabled' }}</td></tr>
+  </table>
 </div>
 {% endblock %}

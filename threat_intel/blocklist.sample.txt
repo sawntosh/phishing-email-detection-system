@@ -1,0 +1,12 @@
+# Offline domain blocklist (checked automatically on every upload, no network access).
+# Copy this file to  instance/threat_intel/blocklist.txt  and add one domain or URL per line.
+# Wildcards ("*.example.top") and subdomains are matched automatically; lines starting with # are ignored.
+#
+# Good sources (download, extract the domain column, append here):
+#   - OpenPhish community feed   https://openphish.com/feed.txt
+#   - PhishTank verified online  https://phishtank.org/developer_info.php
+#   - your organisation's own confirmed-phish list (see Review queue -> "Export feedback CSV")
+#
+# Demo entries (RFC 2606 reserved names, never real sites):
+phish-demo.example
+*.credential-harvest.example

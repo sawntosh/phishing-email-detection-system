@@ -11,11 +11,21 @@
   <p class="mono">From: {{ s.sender }} &nbsp;|&nbsp; File: {{ s.original_filename }} &nbsp;|&nbsp; SHA-256: {{ s.sha256_hash }}</p>
 
   <label>Risk score: {{ s.risk_score }} / 100</label>
-  <div class="score-bar"><div style="width:{{ s.risk_score }}%; background: {{ 'var(--danger)' if s.risk_score >= 70 else ('var(--warn)' if s.risk_score >= 35 else 'var(--ok)') }};"></div></div>
+  <div class="score-bar"><div style="width:{{ s.risk_score }}%; background: {{ 'var(--danger)' if s.risk_score >= 60 else ('var(--warn)' if s.risk_score >= 30 else 'var(--ok)') }};"></div></div>
 
   <table>
-    <tr><th>SPF</th><th>DKIM</th><th>DMARC</th><th>ML phishing probability</th></tr>
-    <tr><td>{{ s.spf_result }}</td><td>{{ s.dkim_result }}</td><td>{{ s.dmarc_result }}</td><td>{{ s.ml_probability }}</td></tr>
+    <tr><th>SPF</th><th>DKIM</th><th>DMARC</th></tr>
+    <tr><td>{{ s.spf_result }}</td><td>{{ s.dkim_result }}</td><td>{{ s.dmarc_result }}</td></tr>
+  </table>
+
+  <h3 style="margin-bottom:0;">How the score was built</h3>
+  <p class="mono">final score = 50% rule-based score + 50% machine-learning probability</p>
+  <table>
+    <tr><th>Component</th><th>Value</th><th>What it measures</th></tr>
+    <tr><td>Rule-based score</td><td>{{ s.rule_score if s.rule_score is not none else 'n/a' }} / 100</td><td>URL, header/sender and content checks</td></tr>
+    <tr><td>Text model (real corpus)</td><td>{{ s.text_probability if s.text_probability is not none else 'not trained' }}</td><td>Wording learned from real phishing vs. legitimate mail</td></tr>
+    <tr><td>Structured model</td><td>{{ s.structured_probability if s.structured_probability is not none else 'n/a' }}</td><td>URL / header / content feature vector</td></tr>
+    <tr><td>Blended ML probability</td><td>{{ s.ml_probability }}</td><td>65% text model + 35% structured model</td></tr>
   </table>
 
   <p style="margin-top:14px;">
@@ -34,22 +44,86 @@
 </div>
 
 <div class="card">
-  <h3>Rule-based indicators</h3>
+  <h3>Why this verdict — rule-based indicators</h3>
   {% if s.rule_indicators() %}
   <table>
-    <tr><th>Indicator</th></tr>
-    {% for ind in s.rule_indicators() %}<tr><td>{{ ind }}</td></tr>{% endfor %}
+    <tr><th>Indicator</th><th>Meaning</th></tr>
+    {% for ind in s.rule_indicators() %}
+    <tr><td class="mono">{{ ind }}</td><td>{{ ind|explain_indicator or '—' }}</td></tr>
+    {% endfor %}
   </table>
-  {% else %}<p class="mono">None triggered.</p>{% endif %}
+  {% else %}<p class="mono">No rule-based indicators triggered.</p>{% endif %}
 </div>
 
 <div class="card">
-  <h3>ML explainability — top contributing features</h3>
+  <h3>Links, domains &amp; threat intelligence</h3>
+  <p class="mono">Addresses are shown defanged (hxxp / [.]) and are never clickable. Offline blocklist matching happens automatically; external lookups run only when an analyst clicks the button below, and every lookup is audit-logged.</p>
+  {% if s.indicators %}
+  <table>
+    <tr><th>Type</th><th>Indicator</th><th>Static findings</th><th>Intel result</th></tr>
+    {% for i in s.indicators %}
+    <tr>
+      <td>{{ i.kind|replace('_', ' ') }}</td>
+      <td class="mono">{{ i.value|defang }}{% if i.redirect_target %}<br>&rarr; redirects to {{ i.redirect_target|defang }}{% endif %}</td>
+      <td>
+        {% if i.blocklisted %}<span class="badge badge-phishing">blocklisted</span> {% endif %}
+        {% for f in i.findings() %}<span class="gate-chip" style="color:var(--warn)">{{ f }}</span>{% endfor %}
+        {% if not i.findings() and not i.blocklisted %}<span class="mono">none</span>{% endif %}
+      </td>
+      <td>
+        {% set intel = i.intel() %}
+        {% if i.intel_verdict %}
+          <span class="badge badge-{{ 'phishing' if i.intel_verdict == 'malicious' else ('suspicious' if i.intel_verdict == 'suspicious' else 'legitimate') }}">{{ i.intel_verdict }}</span>
+          {% if intel.virustotal %}
+            <div class="mono">VirusTotal: {{ intel.virustotal.get('malicious', 0) }} malicious / {{ intel.virustotal.get('suspicious', 0) }} suspicious / {{ intel.virustotal.get('harmless', 0) }} harmless{% if intel.virustotal.detail %} ({{ intel.virustotal.detail }}){% endif %}</div>
+          {% endif %}
+          {% if intel.redirect_chain %}
+            <div class="mono">Redirect chain ({{ intel.redirect_chain.hops }} hop{{ '' if intel.redirect_chain.hops == 1 else 's' }}{% if intel.redirect_chain.truncated %}, truncated{% endif %}):
+              {% for hop in intel.redirect_chain.chain %}<br>{{ hop.status }} {{ hop.url|defang }}{% endfor %}
+              {% if intel.redirect_chain.final_findings %}<br>final destination flagged: {{ intel.redirect_chain.final_findings|join(', ') }}{% endif %}
+            </div>
+          {% endif %}
+        {% else %}<span class="mono">not checked</span>{% endif %}
+      </td>
+    </tr>
+    {% endfor %}
+  </table>
+  {% if current_user.role in ['analyst','admin'] %}
+    {% if intel_configured or resolver_enabled %}
+    <form method="POST" action="{{ url_for('detector.run_threat_intel', submission_id=s.id) }}" style="margin-top:12px;">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+      <button class="button" type="submit">Run threat-intel lookup</button>
+      <span class="mono">
+        {% if intel_configured %}VirusTotal domain/attachment-hash reputation{% endif %}{% if intel_configured and resolver_enabled %} + {% endif %}{% if resolver_enabled %}safe redirect-chain resolution{% endif %}
+      </span>
+    </form>
+    {% else %}
+    <p class="mono" style="margin-top:12px;">External lookups are disabled. Set <code>VIRUSTOTAL_API_KEY</code> and/or <code>ENABLE_REDIRECT_RESOLVER=true</code> in <code>.env</code> to enable them.</p>
+    {% endif %}
+  {% endif %}
+  {% else %}<p class="mono">No links or attachments found.</p>{% endif %}
+</div>
+
+<div class="card">
+  <h3>Explainability — what the models saw</h3>
+  {% if text_terms %}
+  <h4>Words and phrases that moved the text model</h4>
+  <p class="mono">contribution = model weight × TF-IDF value of the term in this email. Red pushes toward "phishing", green toward "legitimate".</p>
+  <table>
+    <tr><th>Term</th><th>TF-IDF value</th><th>Contribution</th></tr>
+    {% for e in text_terms %}
+    <tr><td>{{ e.feature }}</td><td>{{ e.value }}</td><td style="color: {{ 'var(--danger)' if e.contribution > 0 else 'var(--ok)' }}">{{ e.contribution }}</td></tr>
+    {% endfor %}
+  </table>
+  {% endif %}
+  <h4>Structured features (URL / header / content)</h4>
   <p class="mono">contribution = coefficient × (standardised feature value); positive pushes toward "phishing".</p>
   <table>
     <tr><th>Feature</th><th>Value</th><th>Contribution</th></tr>
-    {% for e in s.ml_explanation() %}
+    {% for e in structured_terms %}
     <tr><td>{{ e.feature }}</td><td>{{ e.value }}</td><td style="color: {{ 'var(--danger)' if e.contribution > 0 else 'var(--ok)' }}">{{ e.contribution }}</td></tr>
+    {% else %}
+    <tr><td colspan="3" class="mono">No structured feature moved the score.</td></tr>
     {% endfor %}
   </table>
 </div>

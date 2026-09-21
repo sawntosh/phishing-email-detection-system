@@ -3,6 +3,7 @@ import sys
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 sys.path.insert(0, os.path.join(ROOT, "src"))
+sys.path.insert(0, ROOT)
 
 import pytest
 import pyotp
@@ -21,15 +22,22 @@ class TestConfig(Config):
 
 @pytest.fixture(scope="session", autouse=True)
 def _ensure_model_trained():
-    """Train a small model once for the whole test session if one doesn't
-    already exist (train_model.py, run separately, produces the full-size
-    model used by the running app)."""
+    """Train small synthetic models once for the whole test session if they
+    don't already exist (`python train_model.py`, run separately, produces the
+    full real-corpus models used by the running app)."""
     from analysis.ml_classifier import MODEL_PATH
-    if not os.path.exists(MODEL_PATH):
+    from analysis.text_model import TEXT_MODEL_PATH
+    if not (os.path.exists(MODEL_PATH) and os.path.exists(TEXT_MODEL_PATH)):
         import importlib
         train_model = importlib.import_module("train_model")
-        train_model.main()
+        train_model.main(["--source", "synthetic"])
     yield
+
+
+@pytest.fixture(autouse=True)
+def _isolated_blocklist(tmp_path, monkeypatch):
+    """Never let a developer's real instance/threat_intel/blocklist.txt change test results."""
+    monkeypatch.setenv("THREAT_BLOCKLIST_PATH", str(tmp_path / "no_blocklist.txt"))
 
 
 @pytest.fixture

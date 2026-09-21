@@ -3,28 +3,69 @@
 {% block content %}
 <h1>Dashboard</h1>
 <div class="grid grid-4">
-  <div class="card stat"><div class="num">{{ total }}</div><div class="label">Total analysed</div></div>
-  <div class="card stat"><div class="num" style="color:var(--danger)">{{ phishing }}</div><div class="label">Phishing</div></div>
-  <div class="card stat"><div class="num" style="color:var(--warn)">{{ suspicious }}</div><div class="label">Suspicious</div></div>
-  <div class="card stat"><div class="num" style="color:var(--ok)">{{ false_positives }}</div><div class="label">Reported false positives</div></div>
+  <div class="card stat"><div class="num">{{ stats.total }}</div><div class="label">Total analysed</div></div>
+  <div class="card stat"><div class="num" style="color:var(--danger)">{{ stats.phishing }}</div><div class="label">Phishing</div></div>
+  <div class="card stat"><div class="num" style="color:var(--warn)">{{ stats.suspicious }}</div><div class="label">Suspicious</div></div>
+  <div class="card stat"><div class="num" style="color:var(--ok)">{{ stats.legitimate }}</div><div class="label">Legitimate</div></div>
+</div>
+
+<div class="grid grid-4">
+  <div class="card stat"><div class="num">{{ stats.detection_rate }}%</div><div class="label">Detection rate (flagged / total)</div></div>
+  <div class="card stat"><div class="num">{{ stats.fp_rate }}%</div><div class="label">False-positive rate (of {{ stats.reviewed }} reviewed)</div></div>
+  <div class="card stat"><div class="num">{{ stats.precision_est }}%</div><div class="label">Analyst-confirmed precision</div></div>
+  <div class="card stat"><div class="num" style="color:var(--warn)">{{ stats.pending_review }}</div><div class="label">Awaiting analyst review</div></div>
 </div>
 
 <div class="card">
-  <h3>Most common indicators (last 200 scans)</h3>
+  <h3>Verdict distribution</h3>
+  {% for label, key, color in [('Phishing','phishing','var(--danger)'), ('Suspicious','suspicious','var(--warn)'), ('Legitimate','legitimate','var(--ok)')] %}
+  <div style="display:flex; align-items:center; gap:10px; margin-bottom:6px;">
+    <span style="width:90px; color:var(--muted); font-size:.85rem;">{{ label }}</span>
+    <div class="score-bar" style="flex:1; margin:0;"><div style="width:{{ stats.verdict_pct[key] }}%; background:{{ color }};"></div></div>
+    <span style="width:52px; text-align:right; font-size:.85rem;">{{ stats.verdict_pct[key] }}%</span>
+  </div>
+  {% endfor %}
+</div>
+
+<div class="card">
+  <h3>Last 14 days</h3>
   <table>
-    <tr><th>Indicator</th><th>Occurrences</th></tr>
-    {% for ind, count in top_indicators %}
-    <tr><td>{{ ind }}</td><td>{{ count }}</td></tr>
-    {% else %}
-    <tr><td colspan="2">No submissions yet.</td></tr>
+    <tr><th>Day</th><th>Analysed</th><th>Flagged</th><th style="width:50%"></th></tr>
+    {% for d in trend %}
+    <tr>
+      <td>{{ d.day }}</td><td>{{ d.total }}</td><td>{{ d.flagged }}</td>
+      <td><div class="score-bar" style="margin:0;"><div style="width:{{ (100 * d.total / trend_max)|round(0) }}%; background:var(--accent);"></div></div></td>
+    </tr>
     {% endfor %}
   </table>
 </div>
 
 <div class="card">
+  <h3>Most common indicators (last 200 scans)</h3>
+  <table>
+    <tr><th>Indicator</th><th>Meaning</th><th>Occurrences</th></tr>
+    {% for ind, count in top_indicators %}
+    <tr><td class="mono">{{ ind }}</td><td>{{ ind|explain_indicator or '—' }}</td><td>{{ count }}</td></tr>
+    {% else %}
+    <tr><td colspan="3">No submissions yet.</td></tr>
+    {% endfor %}
+  </table>
+</div>
+
+<div class="card">
+  <h3>Tool activity</h3>
+  <p class="mono">Threat-intel lookups run: {{ stats.intel_checked }} &nbsp;|&nbsp; flagged suspicious/malicious by external intel: {{ stats.intel_bad }}
+    {% if current_user.is_admin %}&nbsp;|&nbsp; <a href="{{ url_for('admin.model_performance') }}" style="color:var(--accent);">Model performance &rarr;</a>{% endif %}</p>
+</div>
+
+<div class="card">
   <div style="display:flex; justify-content:space-between; align-items:center;">
     <h3>Recent submissions</h3>
-    <a class="button" href="{{ url_for('detector.upload') }}">+ Analyse email</a>
+    <div>
+      <a class="button secondary" href="{{ url_for('detector.export_all', fmt='csv') }}">Export all CSV</a>
+      <a class="button secondary" href="{{ url_for('detector.export_all', fmt='json') }}">Export all JSON</a>
+      <a class="button" href="{{ url_for('detector.upload') }}">+ Analyse email</a>
+    </div>
   </div>
   <table>
     <tr><th>ID</th><th>Subject</th><th>Sender</th><th>Verdict</th><th>Score</th><th>Quarantined</th><th></th></tr>

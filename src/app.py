@@ -5,6 +5,7 @@ from flask import Flask, render_template
 from flask_login import LoginManager
 from flask_wtf import CSRFProtect
 from dotenv import load_dotenv
+from sqlalchemy import inspect, text
 
 from config import Config
 from models import db, User
@@ -60,11 +61,33 @@ def create_app(config_class=Config):
     def not_found(e):
         return render_template("errors/404.html"), 404
 
+    from analysis.explanations import explain_indicator, defang
+    app.jinja_env.filters["explain_indicator"] = explain_indicator
+    app.jinja_env.filters["defang"] = defang
+
     with app.app_context():
         db.create_all()
+        _add_missing_columns()
         _ensure_default_admin(app)
 
     return app
+
+
+def _add_missing_columns():
+    """db.create_all() never alters an existing table. Add any nullable columns
+    introduced after a database file was first created so upgrading needs no
+    manual migration (SQLite ALTER TABLE ... ADD COLUMN)."""
+    inspector = inspect(db.engine)
+    for table in db.metadata.sorted_tables:
+        if not inspector.has_table(table.name):
+            continue
+        existing = {c["name"] for c in inspector.get_columns(table.name)}
+        for column in table.columns:
+            if column.name in existing or not column.nullable or column.primary_key:
+                continue
+            ddl = column.type.compile(dialect=db.engine.dialect)
+            db.session.execute(text(f'ALTER TABLE "{table.name}" ADD COLUMN "{column.name}" {ddl}'))
+            db.session.commit()
 
 
 def _ensure_default_admin(app):

@@ -6,6 +6,7 @@ from flask_login import login_required, current_user
 
 from models import db, AuditLog, EmailSubmission, User, utcnow
 from security_utils import admin_required
+from analysis import threat_intel
 
 admin_bp = Blueprint("admin", __name__, template_folder="../templates/admin")
 
@@ -23,23 +24,32 @@ def audit_log():
     return render_template("admin/audit_log.html", entries=entries, is_valid=is_valid, broken_id=broken_id)
 
 
+def _load_report(name):
+    path = os.path.join(current_app.instance_path, name)
+    if not os.path.exists(path):
+        return None
+    with open(path, encoding="utf-8") as fh:
+        return json.load(fh)
+
+
 @admin_bp.route("/model-performance")
 @login_required
 @admin_required
 def model_performance():
-    report_path = os.path.join(current_app.instance_path, "model_eval_report.json")
-    eval_report = None
-    if os.path.exists(report_path):
-        with open(report_path) as f:
-            eval_report = json.load(f)
-
     fp_count = EmailSubmission.query.filter_by(analyst_feedback="false_positive").count()
     confirmed_count = EmailSubmission.query.filter_by(analyst_feedback="confirmed_phish").count()
     total_scored = EmailSubmission.query.count()
 
     return render_template(
-        "admin/model_performance.html", eval_report=eval_report,
+        "admin/model_performance.html",
+        eval_report=_load_report("model_eval_report.json"),
+        text_report=_load_report("text_model_report.json"),
         fp_count=fp_count, confirmed_count=confirmed_count, total_scored=total_scored,
+        tools={
+            "blocklist_entries": len(threat_intel.load_blocklist()),
+            "virustotal": bool(current_app.config.get("VIRUSTOTAL_API_KEY")),
+            "redirect_resolver": bool(current_app.config.get("ENABLE_REDIRECT_RESOLVER")),
+        },
     )
 
 
