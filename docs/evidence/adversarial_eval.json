@@ -1,0 +1,75 @@
+{
+  "source": "synthetic",
+  "provenance": "synthetic template corpus",
+  "threshold": 0.5,
+  "n_raw": 700,
+  "n_after_dedupe": 471,
+  "n_train": 353,
+  "n_test": 118,
+  "n_test_phishing": 88,
+  "n_test_legitimate": 30,
+  "leakage": {
+    "duplicate_test_messages_in_train": 0
+  },
+  "baseline": {
+    "phishing_recall": 1.0,
+    "legitimate_false_positive_rate": 0.0
+  },
+  "attacks": [
+    {
+      "attack": "homoglyph",
+      "recall": 1.0,
+      "recall_drop": 0.0,
+      "missed": 0
+    },
+    {
+      "attack": "leetspeak",
+      "recall": 1.0,
+      "recall_drop": 0.0,
+      "missed": 0
+    },
+    {
+      "attack": "zero_width",
+      "recall": 1.0,
+      "recall_drop": 0.0,
+      "missed": 0
+    },
+    {
+      "attack": "char_spacing",
+      "recall": 1.0,
+      "recall_drop": 0.0,
+      "missed": 0
+    },
+    {
+      "attack": "html_comment_split",
+      "recall": 1.0,
+      "recall_drop": 0.0,
+      "missed": 0
+    },
+    {
+      "attack": "synonym_swap",
+      "recall": 1.0,
+      "recall_drop": 0.0,
+      "missed": 0
+    },
+    {
+      "attack": "benign_padding",
+      "recall": 0.0,
+      "recall_drop": 1.0,
+      "missed": 88
+    },
+    {
+      "attack": "url_defang",
+      "recall": 1.0,
+      "recall_drop": 0.0,
+      "missed": 0
+    },
+    {
+      "attack": "combined",
+      "recall": 0.0,
+      "recall_drop": 1.0,
+      "missed": 88
+    }
+  ],
+  "note": "Only phishing messages are perturbed; recall = share still classified phishing. Synthetic-corpus figures validate the harness, not real-world robustness."
+}
