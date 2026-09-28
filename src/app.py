@@ -1,6 +1,7 @@
 import os
 
 import pyotp
+from flasgger import Swagger
 from flask import Flask, render_template
 from flask_login import LoginManager
 from flask_wtf import CSRFProtect
@@ -25,6 +26,19 @@ def create_app(config_class=Config):
     app = Flask(__name__, instance_path=os.path.join(BASE_DIR, "instance"), instance_relative_config=True)
     app.config.from_object(config_class)
     os.makedirs(app.instance_path, exist_ok=True)
+
+    # Swagger UI for manually exercising the routes below -- see /apidocs.
+    # Documentation only; it does not change auth/CSRF, so POST routes still
+    # need an active logged-in session (and a CSRF token where required),
+    # same as using the app in a browser.
+    app.config["SWAGGER"] = {
+        "title": "Phishing Email Detection API",
+        "description": "Endpoints for the phishing detector. Log in via the web UI first, "
+                        "in the same browser tab as /apidocs, so requests carry your session cookie.",
+        "uiversion": 3,
+        "specs_route": "/apidocs/",
+    }
+    Swagger(app)
 
     configure_logging(app)
     register_request_logging(app)

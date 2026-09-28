@@ -168,6 +168,53 @@ def _store_indicators(submission, url_report, attachments):
 @login_required
 @limiter.limit("30 per hour")
 def upload():
+    """
+    Submit an email for phishing analysis.
+    Requires an active logged-in session. POST needs a valid CSRF token
+    (the `csrf_token` field from the upload form), same as the web UI.
+    ---
+    get:
+      tags: [detector]
+      summary: Show the upload form (HTML)
+      responses:
+        200:
+          description: HTML upload page
+    post:
+      tags: [detector]
+      summary: Analyse an uploaded file or pasted message
+      consumes:
+        - multipart/form-data
+      parameters:
+        - name: email_file
+          in: formData
+          type: file
+          required: false
+          description: A .eml or .txt file (mutually exclusive with message_text; max 5 MB).
+        - name: message_text
+          in: formData
+          type: string
+          required: false
+          description: Pasted raw email text (mutually exclusive with email_file).
+        - name: message_subject
+          in: formData
+          type: string
+          required: false
+        - name: message_sender
+          in: formData
+          type: string
+          required: false
+        - name: csrf_token
+          in: formData
+          type: string
+          required: true
+      responses:
+        302:
+          description: Redirects to /result/<id> for the new submission.
+        400:
+          description: Neither or both of email_file/message_text were given.
+        403:
+          description: Rejected by a Zero-Trust ingestion gate, or missing/invalid CSRF token.
+    """
     if request.method == "POST":
         file = request.files.get("email_file")
         has_file = bool(file and file.filename)
@@ -278,6 +325,23 @@ def _get_owned_submission(submission_id):
 @detector_bp.route("/result/<int:submission_id>")
 @login_required
 def view_result(submission_id):
+    """
+    View the risk score, verdict and explanation for one analysed email.
+    ---
+    tags: [detector]
+    parameters:
+      - name: submission_id
+        in: path
+        type: integer
+        required: true
+    responses:
+      200:
+        description: HTML result page
+      403:
+        description: Submission belongs to another user and you're not an admin.
+      404:
+        description: No submission with that id.
+    """
     submission = _get_owned_submission(submission_id)
     explanations = submission.ml_explanation()
     structured_terms = [e for e in explanations if e.get("source") != "text"]

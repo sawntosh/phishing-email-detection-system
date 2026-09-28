@@ -89,6 +89,8 @@ Try it immediately with the two sample emails in `sample_emails/`
 (`phishing_paypal.eml` scores ~98/100 and is auto-quarantined;
 `legitimate_meeting.eml` scores <5/100 and is not).
 
+API docs / testing: once the app is running, open `/apidocs` in the same browser tab you're logged in with (Swagger UI) to browse and try the `/upload` and `/result/<id>` endpoints; POST requests still need a valid session and CSRF token, same as the web UI.
+
 ## User interface
 
 A self-hosted, dependency-free design system (no CDN: the CSP allows only `'self'` scripts and styles).
