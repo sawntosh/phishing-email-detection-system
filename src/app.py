@@ -1,9 +1,9 @@
 import os
 
 import pyotp
-from flask import Flask, render_template
+from flasgger import Swagger
+from flask import Flask, render_template, request
 from flask_login import LoginManager
-from flask_wtf import CSRFProtect
 from dotenv import load_dotenv
 from sqlalchemy import inspect, text
 
@@ -11,9 +11,9 @@ from config import BASE_DIR, Config
 from error_handlers import register_error_handlers
 from logging_config import configure_logging, register_request_logging
 from models import db, User
+from security_utils import csrf
 from ui_helpers import register_ui
 
-csrf = CSRFProtect()
 login_manager = LoginManager()
 login_manager.login_view = "auth.login"
 
@@ -25,6 +25,19 @@ def create_app(config_class=Config):
     app = Flask(__name__, instance_path=os.path.join(BASE_DIR, "instance"), instance_relative_config=True)
     app.config.from_object(config_class)
     os.makedirs(app.instance_path, exist_ok=True)
+
+    # Swagger UI for manually exercising the routes below -- see /apidocs.
+    # Documentation only; it does not change auth/CSRF, so POST routes still
+    # need an active logged-in session (and a CSRF token where required),
+    # same as using the app in a browser.
+    app.config["SWAGGER"] = {
+        "title": "Phishing Email Detection API",
+        "description": "Endpoints for the phishing detector. Log in via the web UI first, "
+                        "in the same browser tab as /apidocs, so requests carry your session cookie.",
+        "uiversion": 3,
+        "specs_route": "/apidocs/",
+    }
+    Swagger(app)
 
     configure_logging(app)
     register_request_logging(app)
@@ -56,9 +69,21 @@ def create_app(config_class=Config):
         response.headers["X-Content-Type-Options"] = "nosniff"
         response.headers["X-Frame-Options"] = "DENY"
         response.headers["Referrer-Policy"] = "no-referrer"
-        response.headers["Content-Security-Policy"] = (
-            "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:"
-        )
+        if request.blueprint == "flasgger":
+            # Swagger UI (the /apidocs page only) needs an inline <script> to boot
+            # itself and loads its font from Google Fonts; the strict policy below
+            # blocks both silently, which just looks like the page hanging on the
+            # loading spinner forever. Relaxed here, and only here -- every other
+            # route in the app keeps the strict policy.
+            response.headers["Content-Security-Policy"] = (
+                "default-src 'self'; script-src 'self' 'unsafe-inline' 'unsafe-eval'; "
+                "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; "
+                "font-src 'self' https://fonts.gstatic.com; img-src 'self' data:"
+            )
+        else:
+            response.headers["Content-Security-Policy"] = (
+                "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:"
+            )
         if app.config.get("SESSION_COOKIE_SECURE"):
             response.headers["Strict-Transport-Security"] = "max-age=31536000; includeSubDomains"
         return response

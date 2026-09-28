@@ -13,6 +13,7 @@ Security-relevant design choices:
 """
 import hashlib
 import json
+import secrets
 from datetime import datetime, timezone
 
 from flask_login import UserMixin
@@ -63,6 +64,13 @@ class User(db.Model, UserMixin):
     failed_login_count = db.Column(db.Integer, default=0, nullable=False)
     locked_until = db.Column(db.DateTime, nullable=True)
 
+    # API token for the Swagger-testable /api/analyze endpoint, as an
+    # alternative to session-cookie login. Only the sha256 hash is stored
+    # (like a password, but sha256 is fine here -- the token is high-entropy
+    # and random, not user-chosen, so it needs no slow KDF); the raw token
+    # is shown once, at issue time, and cannot be recovered afterwards.
+    api_token_hash = db.Column(db.String(64), nullable=True)
+
     submissions = db.relationship("EmailSubmission", backref="submitted_by", lazy="dynamic")
 
     def set_password(self, raw_password):
@@ -90,6 +98,22 @@ class User(db.Model, UserMixin):
     @property
     def is_admin(self):
         return self.role == "admin"
+
+    def set_api_token(self):
+        """Issues a new API token, invalidating any previous one (one active
+        token per user), and returns the raw token. Caller must persist it
+        (db.session.commit()) and show it to the user now -- it is not
+        retrievable later, only re-issued."""
+        raw_token = secrets.token_urlsafe(32)
+        self.api_token_hash = hashlib.sha256(raw_token.encode("utf-8")).hexdigest()
+        return raw_token
+
+    @classmethod
+    def find_by_api_token(cls, raw_token):
+        if not raw_token:
+            return None
+        digest = hashlib.sha256(raw_token.encode("utf-8")).hexdigest()
+        return cls.query.filter_by(api_token_hash=digest).first()
 
 
 class EmailSubmission(db.Model):
