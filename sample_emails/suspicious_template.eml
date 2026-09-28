@@ -1,0 +1,22 @@
+From: "Microsoft 365 Security" <security-alert@micros0ft-support.example>
+Reply-To: helpdesk.recovery@mail-secure.example
+To: you@example.com
+Subject: URGENT: Your account will be suspended within 24 hours
+Date: Mon, 1 Sep 2025 03:14:00 +0000
+Authentication-Results: mx.example.com; spf=fail smtp.mailfrom=micros0ft-support.example; dkim=fail; dmarc=fail
+
+Dear Customer,
+
+We detected unusual sign-in activity on your account. Your mailbox will be
+SUSPENDED in 24 hours unless you verify your identity immediately.
+
+Verify your account now:
+http://192.0.2.45/login/verify?user=you@example.com
+
+Or use this shortened link: http://bit.ly/verify-acct-example
+
+You will be required to confirm your password and payment details.
+Failure to act will result in permanent account closure.
+
+Thank you,
+Account Security Team
