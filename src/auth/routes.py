@@ -5,11 +5,11 @@ import qrcode
 import qrcode.image.svg
 import io
 import base64
-from flask import Blueprint, render_template, redirect, url_for, flash, request, session
+from flask import Blueprint, render_template, redirect, url_for, flash, request, session, jsonify
 from flask_login import login_user, logout_user, login_required, current_user
 
 from models import db, User, AuditLog, utcnow
-from security_utils import limiter
+from security_utils import limiter, csrf
 from auth.forms import RegisterForm, LoginForm, TwoFactorForm
 
 auth_bp = Blueprint("auth", __name__, template_folder="../templates/auth")
@@ -141,6 +141,75 @@ def verify_2fa():
         AuditLog.append("2fa_fail", user_id=user.id, username=user.username, ip_address=_client_ip())
         flash("Invalid authentication code.", "danger")
     return render_template("auth/verify_2fa.html", form=form)
+
+
+@auth_bp.route("/api-token", methods=["POST"])
+@limiter.limit("10 per hour")
+@csrf.exempt
+def issue_api_token():
+    """
+    Exchange username + password + current TOTP code for a bearer token,
+    used by POST /api/analyze (the endpoint Swagger's "Try it out" needs).
+    Same password/lockout checks as the normal login form, plus 2FA -- this
+    is a machine-facing alternative to session-cookie login, not a way
+    around it. CSRF-exempt because it authenticates via a request body, not
+    an ambient session cookie, so CSRF (a forged request riding a victim's
+    cookies) does not apply.
+    ---
+    tags: [auth]
+    consumes:
+      - application/json
+    parameters:
+      - in: body
+        name: credentials
+        required: true
+        schema:
+          type: object
+          required: [username, password, totp_code]
+          properties:
+            username: {type: string}
+            password: {type: string}
+            totp_code: {type: string, description: "6-digit code from your authenticator app"}
+    responses:
+      200:
+        description: '{"api_token": "..."} -- shown once, store it now; issuing a new token invalidates the old one.'
+      401:
+        description: Invalid username/password/code, 2FA not set up yet, or account locked.
+    """
+    data = request.get_json(silent=True) or {}
+    username = (data.get("username") or "").strip()
+    password = data.get("password") or ""
+    totp_code = (data.get("totp_code") or "").strip()
+
+    user = User.query.filter_by(username=username).first()
+
+    if user and user.locked_until and user.locked_until > utcnow():
+        AuditLog.append("login_fail_locked", user_id=user.id, username=user.username,
+                         ip_address=_client_ip(), detail="api-token")
+        return jsonify(error="Account temporarily locked due to repeated failed attempts."), 401
+
+    if user and user.check_password(password):
+        if not user.totp_enabled:
+            return jsonify(error="Finish two-factor authentication setup via the web UI first."), 401
+        if pyotp.TOTP(user.totp_secret).verify(totp_code, valid_window=1):
+            user.failed_login_count = 0
+            user.locked_until = None
+            token = user.set_api_token()
+            db.session.commit()
+            AuditLog.append("api_token_issued", user_id=user.id, username=user.username, ip_address=_client_ip())
+            return jsonify(api_token=token)
+        AuditLog.append("2fa_fail", user_id=user.id, username=user.username,
+                         ip_address=_client_ip(), detail="api-token")
+        return jsonify(error="Invalid authentication code."), 401
+
+    if user:
+        user.failed_login_count = (user.failed_login_count or 0) + 1
+        if user.failed_login_count >= MAX_FAILED_ATTEMPTS:
+            user.locked_until = utcnow() + timedelta(minutes=LOCKOUT_MINUTES)
+        db.session.commit()
+
+    AuditLog.append("login_fail", username=username, ip_address=_client_ip(), detail="api-token")
+    return jsonify(error="Invalid username or password."), 401
 
 
 @auth_bp.route("/logout")

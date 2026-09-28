@@ -7,13 +7,13 @@ from math import ceil
 
 from flask import (
     Blueprint, render_template, request, redirect, url_for, flash,
-    send_file, current_app, abort,
+    send_file, current_app, abort, jsonify,
 )
 from flask_login import login_required, current_user
 from sqlalchemy import func, or_
 
-from models import db, EmailSubmission, ExtractedIndicator, AuditLog, utcnow
-from security_utils import limiter, analyst_or_admin_required
+from models import db, User, EmailSubmission, ExtractedIndicator, AuditLog, utcnow
+from security_utils import limiter, analyst_or_admin_required, csrf
 from analysis import zero_trust, risk_engine, threat_intel
 from analysis.explanations import brand_display, defang, indicator_title
 from analysis.url_analysis import analyse_url
@@ -240,15 +240,7 @@ def upload():
                 return redirect(url_for("detector.upload"))
 
         try:
-            result = zero_trust.ingest(
-                raw_bytes=raw_bytes,
-                filename=filename,
-                declared_mimetype=mimetype,
-                user=current_user,
-                max_bytes=current_app.config["MAX_CONTENT_LENGTH"],
-                allowed_ext=current_app.config["ALLOWED_UPLOAD_EXTENSIONS"],
-                allowed_mimetypes=current_app.config["ALLOWED_UPLOAD_MIMETYPES"],
-            )
+            submission = _analyze_and_store(raw_bytes, filename, mimetype, current_user)
         except ZeroTrustRejection as exc:
             AuditLog.append(
                 "ingest_rejected", user_id=current_user.id, username=current_user.username,
@@ -257,60 +249,167 @@ def upload():
             flash(f"Submission rejected at Zero-Trust gate {exc.gate}: {exc.reason}", "danger")
             return redirect(url_for("detector.upload"))
 
-        AuditLog.append(
-            "ingest_accepted", user_id=current_user.id, username=current_user.username,
-            ip_address=_client_ip(), detail=f"gates_passed={result.gates_passed} sha256={result.sha256_hash}",
-        )
-
-        scored = risk_engine.score_email(
-            subject=result.subject,
-            body_text=result.body_text,
-            sender_raw=result.sender,
-            raw_headers=result.raw_headers,
-            attachment_count=len(result.attachment_summaries),
-        )
-
-        submission = EmailSubmission(
-            user_id=current_user.id,
-            original_filename=filename,
-            sha256_hash=result.sha256_hash,
-            sender=result.sender,
-            sender_display_name=scored["header_report"]["display_name"],
-            subject=result.subject,
-            received_headers_summary=json.dumps(list(result.raw_headers.keys())),
-            reply_to=_header(result.raw_headers, "Reply-To"),
-            return_path=_header(result.raw_headers, "Return-Path"),
-            spf_result=scored["header_report"]["spf"],
-            dkim_result=scored["header_report"]["dkim"],
-            dmarc_result=scored["header_report"]["dmarc"],
-            risk_score=scored["risk_score"],
-            verdict=scored["verdict"],
-            rule_indicators_json=json.dumps(scored["rule_indicators"]),
-            ml_probability=scored["ml_probability"],
-            rule_score=scored["rule_score_pct"],
-            text_probability=scored["text_probability"],
-            structured_probability=scored["structured_probability"],
-            ml_explanation_json=json.dumps(scored["ml_explanation"]),
-            attachment_summary_json=json.dumps(result.attachment_summaries),
-            quarantined=(scored["verdict"] in FLAGGED_VERDICTS),
-        )
-        db.session.add(submission)
-        _store_indicators(submission, scored["url_report"], result.attachment_summaries)
-        db.session.commit()
-
-        AuditLog.append(
-            "scored", user_id=current_user.id, username=current_user.username, ip_address=_client_ip(),
-            detail=f"submission_id={submission.id} verdict={submission.verdict} score={submission.risk_score}",
-        )
-        if submission.quarantined:
-            AuditLog.append(
-                "quarantine", user_id=current_user.id, username=current_user.username,
-                ip_address=_client_ip(), detail=f"submission_id={submission.id} (quarantine-by-default)",
-            )
-
         return redirect(url_for("detector.view_result", submission_id=submission.id))
 
     return render_template("detector/upload.html")
+
+
+def _analyze_and_store(raw_bytes, filename, mimetype, user):
+    """Zero-Trust ingest + score + persist one email. Raises ZeroTrustRejection
+    if a gate rejects it -- the caller decides how to report that (flash+redirect
+    for the HTML form, JSON for the API). Shared by upload() and api_analyze()
+    so the two entry points can never drift apart."""
+    result = zero_trust.ingest(
+        raw_bytes=raw_bytes,
+        filename=filename,
+        declared_mimetype=mimetype,
+        user=user,
+        max_bytes=current_app.config["MAX_CONTENT_LENGTH"],
+        allowed_ext=current_app.config["ALLOWED_UPLOAD_EXTENSIONS"],
+        allowed_mimetypes=current_app.config["ALLOWED_UPLOAD_MIMETYPES"],
+    )
+
+    AuditLog.append(
+        "ingest_accepted", user_id=user.id, username=user.username,
+        ip_address=_client_ip(), detail=f"gates_passed={result.gates_passed} sha256={result.sha256_hash}",
+    )
+
+    scored = risk_engine.score_email(
+        subject=result.subject,
+        body_text=result.body_text,
+        sender_raw=result.sender,
+        raw_headers=result.raw_headers,
+        attachment_count=len(result.attachment_summaries),
+    )
+
+    submission = EmailSubmission(
+        user_id=user.id,
+        original_filename=filename,
+        sha256_hash=result.sha256_hash,
+        sender=result.sender,
+        sender_display_name=scored["header_report"]["display_name"],
+        subject=result.subject,
+        received_headers_summary=json.dumps(list(result.raw_headers.keys())),
+        reply_to=_header(result.raw_headers, "Reply-To"),
+        return_path=_header(result.raw_headers, "Return-Path"),
+        spf_result=scored["header_report"]["spf"],
+        dkim_result=scored["header_report"]["dkim"],
+        dmarc_result=scored["header_report"]["dmarc"],
+        risk_score=scored["risk_score"],
+        verdict=scored["verdict"],
+        rule_indicators_json=json.dumps(scored["rule_indicators"]),
+        ml_probability=scored["ml_probability"],
+        rule_score=scored["rule_score_pct"],
+        text_probability=scored["text_probability"],
+        structured_probability=scored["structured_probability"],
+        ml_explanation_json=json.dumps(scored["ml_explanation"]),
+        attachment_summary_json=json.dumps(result.attachment_summaries),
+        quarantined=(scored["verdict"] in FLAGGED_VERDICTS),
+    )
+    db.session.add(submission)
+    _store_indicators(submission, scored["url_report"], result.attachment_summaries)
+    db.session.commit()
+
+    AuditLog.append(
+        "scored", user_id=user.id, username=user.username, ip_address=_client_ip(),
+        detail=f"submission_id={submission.id} verdict={submission.verdict} score={submission.risk_score}",
+    )
+    if submission.quarantined:
+        AuditLog.append(
+            "quarantine", user_id=user.id, username=user.username,
+            ip_address=_client_ip(), detail=f"submission_id={submission.id} (quarantine-by-default)",
+        )
+    return submission
+
+
+@detector_bp.route("/api/analyze", methods=["POST"])
+@limiter.limit("30 per hour")
+@csrf.exempt
+def api_analyze():
+    """
+    Analyse an email using a bearer API token instead of a browser session --
+    get a token from POST /auth/api-token first. This is what Swagger's
+    "Try it out" uses; CSRF-exempt because it authenticates via a header
+    you attach yourself, not an ambient session cookie.
+    ---
+    tags: [detector]
+    consumes:
+      - multipart/form-data
+    parameters:
+      - name: Authorization
+        in: header
+        type: string
+        required: true
+        description: "Bearer <token> -- get one from POST /auth/api-token"
+      - name: email_file
+        in: formData
+        type: file
+        required: false
+        description: A .eml or .txt file (mutually exclusive with message_text; max 5 MB).
+      - name: message_text
+        in: formData
+        type: string
+        required: false
+      - name: message_subject
+        in: formData
+        type: string
+        required: false
+      - name: message_sender
+        in: formData
+        type: string
+        required: false
+    responses:
+      201:
+        description: '{"submission_id", "risk_score", "verdict", "quarantined", "result_url"}'
+      400:
+        description: Neither or both of email_file/message_text were given.
+      401:
+        description: Missing or invalid bearer token.
+      403:
+        description: Rejected by a Zero-Trust ingestion gate.
+    """
+    auth_header = request.headers.get("Authorization", "")
+    token = auth_header[7:] if auth_header.lower().startswith("bearer ") else None
+    user = User.find_by_api_token(token) if token else None
+    if user is None:
+        return jsonify(error="Missing or invalid bearer token. Get one from POST /auth/api-token."), 401
+
+    file = request.files.get("email_file")
+    has_file = bool(file and file.filename)
+    pasted_text = request.form.get("message_text", "")
+    has_paste = bool(pasted_text.strip())
+
+    if has_file and has_paste:
+        return jsonify(error="Provide either email_file or message_text, not both."), 400
+    if not has_file and not has_paste:
+        return jsonify(error="Provide either email_file or message_text."), 400
+
+    if has_file:
+        raw_bytes, filename, mimetype = file.read(), file.filename, file.mimetype
+    else:
+        try:
+            raw_bytes, filename, mimetype = pasted.build_from_paste(
+                pasted_text, request.form.get("message_subject", ""), request.form.get("message_sender", ""),
+            )
+        except pasted.PastedMessageError as exc:
+            return jsonify(error=str(exc)), 400
+
+    try:
+        submission = _analyze_and_store(raw_bytes, filename, mimetype, user)
+    except ZeroTrustRejection as exc:
+        AuditLog.append(
+            "ingest_rejected", user_id=user.id, username=user.username,
+            ip_address=_client_ip(), detail=f"gate={exc.gate} reason={exc.reason} (api)",
+        )
+        return jsonify(error=f"Rejected at Zero-Trust gate {exc.gate}: {exc.reason}"), 403
+
+    return jsonify(
+        submission_id=submission.id,
+        risk_score=submission.risk_score,
+        verdict=submission.verdict,
+        quarantined=submission.quarantined,
+        result_url=url_for("detector.view_result", submission_id=submission.id),
+    ), 201
 
 
 def _get_owned_submission(submission_id):
