@@ -2,13 +2,17 @@
 {% from "_macros.html" import icon, kpi, empty_state, donut, trend_chart, hbars, submission_table, band_badge with context %}
 {% block title %}Dashboard{% endblock %}
 {% block content %}
-<div class="page-header">
-  <div>
-    <h1>Security overview</h1>
+<section class="dashboard-hero" aria-labelledby="dashboard-title">
+  <div class="dashboard-hero__copy">
+    <p class="dashboard-hero__eyebrow">{{ icon('i-shield-check') }}PhishGuard · Security console</p>
+    <h1 id="dashboard-title">Security overview</h1>
     <p>Live status of every email analysed{% if not current_user.is_admin %} by you{% endif %}. Figures are calculated from stored analyses.</p>
   </div>
-  <div class="page-actions"><a class="btn" href="{{ url_for('detector.upload') }}">{{ icon('i-mail-search') }}Analyze Email</a></div>
-</div>
+  <div class="dashboard-hero__actions">
+    <span class="dashboard-hero__mode"><span class="dot tone-info"></span>Rules + ML detection</span>
+    <a class="btn" href="{{ url_for('detector.upload') }}">{{ icon('i-mail-search') }}Analyze Email</a>
+  </div>
+</section>
 
 {% if stats.total == 0 %}
 <div class="card">{{ empty_state('i-inbox', 'No email analyses yet', 'Submit your first email to begin detecting phishing threats. Every result is explained with the evidence behind it.', 'Analyze Email', url_for('detector.upload')) }}</div>
