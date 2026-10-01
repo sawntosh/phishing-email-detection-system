@@ -457,6 +457,29 @@ dialog.dialog::backdrop { background: rgba(3, 7, 18, .65); backdrop-filter: blur
 [data-theme="dark"] .theme-icon--sun, [data-theme="light"] .theme-icon--moon { display: inline-block; }
 .page--public { max-width: 640px; padding-top: 64px; }
 
+/* ---------- dashboard hero ------------------------------------------- */
+.dashboard-hero {
+  position: relative; isolation: isolate; overflow: hidden; display: flex; align-items: center; justify-content: space-between;
+  gap: 24px; margin-bottom: 22px; padding: 24px 28px; border: 1px solid var(--border);
+  border-radius: var(--radius-lg); background: radial-gradient(ellipse at 90% 0%, var(--primary-soft), transparent 48%), var(--surface);
+  box-shadow: var(--shadow-sm);
+}
+.dashboard-hero__copy { min-width: 0; }
+.dashboard-hero__eyebrow {
+  display: flex; align-items: center; gap: 7px; margin: 0 0 8px; color: var(--primary);
+  font-size: .72rem; font-weight: 750; letter-spacing: .09em; text-transform: uppercase;
+}
+.dashboard-hero__eyebrow .icon { width: 1.1em; height: 1.1em; }
+.dashboard-hero h1 { margin: 0 0 5px; font-size: clamp(1.55rem, 3vw, 2rem); letter-spacing: -.035em; }
+.dashboard-hero__copy > p:last-child { margin: 0; max-width: 68ch; color: var(--text-muted); }
+.dashboard-hero__actions { display: flex; align-items: center; justify-content: flex-end; gap: 14px; flex-wrap: wrap; flex: none; }
+.dashboard-hero__mode { display: inline-flex; align-items: center; gap: 8px; color: var(--text-muted); font-size: .82rem; font-weight: 600; white-space: nowrap; }
+.dashboard-hero__mode .dot { box-shadow: 0 0 0 4px var(--info-soft); }
+@media (max-width: 720px) {
+  .dashboard-hero { align-items: flex-start; flex-direction: column; gap: 18px; padding: 20px; }
+  .dashboard-hero__actions { justify-content: flex-start; }
+}
+
 /* ---------- 6. utilities ---------------------------------------------- */
 .mt-0 { margin-top: 0 !important; } .mt-1 { margin-top: 8px; } .mt-2 { margin-top: 16px; } .mt-3 { margin-top: 24px; }
 .mb-0 { margin-bottom: 0 !important; } .mb-2 { margin-bottom: 16px; }
